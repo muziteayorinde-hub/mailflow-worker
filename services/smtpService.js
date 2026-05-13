@@ -3,6 +3,8 @@ import nodemailer from "nodemailer";
 function mapNetError(e, label = "SMTP") {
   const code = e?.code || e?.errno || "";
 
+  console.error("SMTP ERROR:", e);
+
   if (
     [
       "ETIMEDOUT",
@@ -12,7 +14,7 @@ function mapNetError(e, label = "SMTP") {
       "EHOSTUNREACH",
     ].includes(code)
   ) {
-    return "The hosting provider is blocking external IMAP/SMTP access from cloud servers.";
+    return "The hosting provider is blocking external SMTP access from cloud servers.";
   }
 
   if (/timeout/i.test(e?.message || "")) {
@@ -25,42 +27,41 @@ function mapNetError(e, label = "SMTP") {
 export async function testSmtp(data) {
   console.log("Testing SMTP:", {
     host: data.smtpHost,
-    port: data.smtpPort,
+    port: 587,
   });
 
   try {
     const transporter = nodemailer.createTransport({
       host: data.smtpHost,
 
-      port: Number(data.smtpPort || 587),
+      // FORCE STARTTLS
+      port: 587,
 
-      // true ONLY for port 465
-      secure: data.secure === true,
+      secure: false,
 
-      // STARTTLS support
-      requireTLS: data.requireTLS === true,
+      requireTLS: true,
 
       auth: {
         user: data.email,
         pass: data.password,
       },
 
+      // Shared hosting compatibility
       tls: {
-        rejectUnauthorized:
-          data?.tlsOptions?.rejectUnauthorized !== false,
+        rejectUnauthorized: false,
       },
 
-      connectionTimeout:
-        Number(data.connectionTimeout || 60000),
+      // Long timeouts
+      connectionTimeout: 120000,
 
-      greetingTimeout:
-        Number(data.greetingTimeout || 60000),
+      greetingTimeout: 120000,
 
-      socketTimeout:
-        Number(data.socketTimeout || 60000),
+      socketTimeout: 120000,
     });
 
     await transporter.verify();
+
+    console.log("SMTP SUCCESS");
 
     return {
       success: true,
@@ -74,9 +75,8 @@ export async function testSmtp(data) {
 }
 
 export async function sendEmail(data) {
-  console.log("Sending email:", {
+  console.log("Sending Email:", {
     host: data.smtpHost,
-    port: data.smtpPort,
     to: data.to,
   });
 
@@ -84,11 +84,12 @@ export async function sendEmail(data) {
     const transporter = nodemailer.createTransport({
       host: data.smtpHost,
 
-      port: Number(data.smtpPort || 587),
+      // FORCE STARTTLS
+      port: 587,
 
-      secure: data.secure === true,
+      secure: false,
 
-      requireTLS: data.requireTLS === true,
+      requireTLS: true,
 
       auth: {
         user: data.email,
@@ -96,18 +97,14 @@ export async function sendEmail(data) {
       },
 
       tls: {
-        rejectUnauthorized:
-          data?.tlsOptions?.rejectUnauthorized !== false,
+        rejectUnauthorized: false,
       },
 
-      connectionTimeout:
-        Number(data.connectionTimeout || 60000),
+      connectionTimeout: 120000,
 
-      greetingTimeout:
-        Number(data.greetingTimeout || 60000),
+      greetingTimeout: 120000,
 
-      socketTimeout:
-        Number(data.socketTimeout || 60000),
+      socketTimeout: 120000,
     });
 
     const info = await transporter.sendMail({
@@ -127,6 +124,8 @@ export async function sendEmail(data) {
 
       attachments: data.attachments || [],
     });
+
+    console.log("EMAIL SENT:", info.messageId);
 
     return {
       success: true,
