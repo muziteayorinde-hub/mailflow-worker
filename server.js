@@ -1,226 +1,83 @@
 import express from "express";
-import { ImapFlow } from "imapflow";
-import nodemailer from "nodemailer";
-import { simpleParser } from "mailparser";
-import { createClient } from "@supabase/supabase-js";
+import cors from "cors";
+
+import { testImap } from "./services/imapService.js";
+import { testSmtp, sendEmail } from "./services/smtpService.js";
 
 const app = express();
 
-app.use(express.json({ limit: "25mb" }));
+app.use(cors());
 
-const TOKEN = process.env.MAIL_WORKER_TOKEN;
+app.use(express.json());
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-
-app.use((req, res, next) => {
-  if (req.path === "/health") return next();
-
-  const auth = req.headers.authorization || "";
-
-  if (auth !== `Bearer ${TOKEN}`) {
-    return res.status(401).json({
-      error: "Unauthorized"
-    });
-  }
-
-  next();
-});
-
-app.get("/health", (_, res) => {
+app.get("/", (_req, res) => {
   res.json({
-    ok: true
+    status: "MailFlow Worker Running",
   });
 });
 
 app.post("/mail/test", async (req, res) => {
-  const { username, password, imap, smtp } = req.body;
-
   try {
-    const client = new ImapFlow({
-      host: imap.host,
-      port: imap.port,
-      secure: imap.secure,
-      auth: {
-        user: username,
-        pass: password
-      },
-      logger: false
-    });
+    console.log("Incoming payload:", req.body);
 
-    await client.connect();
-    await client.logout();
+    const data = req.body;
 
-    const transporter = nodemailer.createTransport({
-      host: smtp.host,
-      port: smtp.port,
-      secure: smtp.secure,
-      auth: {
-        user: username,
-        pass: password
-      }
-    });
-
-    await transporter.verify();
-
-    res.json({
-      success: true
-    });
-
-  } catch (e) {
-    res.status(400).json({
-      error: e.message
-    });
-  }
-});
-
-app.post("/mail/sync", async (req, res) => {
-  const {
-    account_id,
-    username,
-    password,
-    imap,
-    folder = "INBOX",
-    last_uid = 0
-  } = req.body;
-
-  const client = new ImapFlow({
-    host: imap.host,
-    port: imap.port,
-    secure: imap.secure,
-    auth: {
-      user: username,
-      pass: password
-    },
-    logger: false
-  });
-
-  try {
-    await client.connect();
-
-    const lock = await client.getMailboxLock(folder);
-
-    let lastUid = last_uid || 0;
-
-    try {
-      for await (const msg of client.fetch(
-        { uid: `${(last_uid || 0) + 1}:*` },
-        {
-          uid: true,
-          envelope: true,
-          source: true,
-          flags: true
-        }
-      )) {
-
-        const parsed = await simpleParser(msg.source);
-
-        await supabase.from("emails").insert({
-          account_id,
-          uid: msg.uid,
-          message_id: parsed.messageId,
-          from_address:
-            parsed.from?.value?.[0]?.address || "",
-          from_name:
-            parsed.from?.value?.[0]?.name,
-          to_addresses:
-            parsed.to?.value || [],
-          subject: parsed.subject,
-          body_text: parsed.text,
-          body_html: parsed.html || null,
-          preview:
-            (parsed.text || "").slice(0, 200),
-          folder: "inbox",
-          is_read:
-            msg.flags?.has("\\Seen") || false,
-          has_attachments:
-            (parsed.attachments?.length || 0) > 0,
-          sent_at: parsed.date,
-          flags: [...(msg.flags || [])]
-        });
-
-        if (msg.uid > lastUid) {
-          lastUid = msg.uid;
-        }
-      }
-
-    } finally {
-      lock.release();
+    if (!data.imapHost || !data.smtpHost) {
+      return res.json({
+        success: false,
+        error: "Missing mail server configuration",
+      });
     }
 
-    await client.logout();
+    const imapResult = await testImap(data);
 
-    res.json({
+    if (!imapResult.success) {
+      return res.json(imapResult);
+    }
+
+    const smtpResult = await testSmtp(data);
+
+    if (!smtpResult.success) {
+      return res.json(smtpResult);
+    }
+
+    return res.json({
       success: true,
-      last_uid: lastUid
     });
-
   } catch (e) {
+    console.error("MAIL TEST ERROR:", e);
 
-    try {
-      await client.logout();
-    } catch {}
-
-    res.status(400).json({
-      error: e.message
+    return res.json({
+      success: false,
+      error: e?.message || "Worker error",
     });
   }
 });
 
 app.post("/mail/send", async (req, res) => {
-  const {
-    username,
-    password,
-    smtp,
-    from,
-    to,
-    cc,
-    subject,
-    text,
-    html,
-    attachments
-  } = req.body;
-
   try {
-    const transporter = nodemailer.createTransport({
-      host: smtp.host,
-      port: smtp.port,
-      secure: smtp.secure,
-      auth: {
-        user: username,
-        pass: password
-      }
-    });
+    const result = await sendEmail(req.body);
 
-    const info = await transporter.sendMail({
-      from,
-      to,
-      cc,
-      subject,
-      text,
-      html,
-      attachments: (attachments || []).map(a => ({
-        filename: a.filename,
-        content: a.content,
-        encoding: "base64",
-        contentType: a.content_type
-      }))
-    });
-
-    res.json({
-      success: true,
-      message_id: info.messageId
-    });
-
+    return res.json(result);
   } catch (e) {
-    res.status(400).json({
-      error: e.message
+    return res.json({
+      success: false,
+      error: e?.message || "Send failed",
     });
   }
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log("worker up");
+app.use((err, _req, res, _next) => {
+  console.error("Unhandled:", err);
+
+  return res.status(200).json({
+    success: false,
+    error: err?.message || "Worker error",
+  });
+});
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`Worker running on port ${PORT}`);
 });
