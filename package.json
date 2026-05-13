@@ -1,6 +1,4 @@
-PACKAGE.JSON
 
-```json
 {
   "name": "mailflow-worker",
   "version": "1.0.0",
@@ -17,4 +15,4 @@ PACKAGE.JSON
     "nodemailer": "^6.9.14"
   }
 }
-```
+
