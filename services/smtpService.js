@@ -1,4 +1,4 @@
-const nodemailer = require("nodemailer");
+import nodemailer from "nodemailer";
 
 /*
 |--------------------------------------------------------------------------
@@ -6,9 +6,7 @@ const nodemailer = require("nodemailer");
 |--------------------------------------------------------------------------
 */
 
-async function sendEmail(
-  data
-) {
+export async function sendEmail(data) {
   try {
     /*
     |--------------------------------------------------------------------------
@@ -22,8 +20,7 @@ async function sendEmail(
           process.env.SMTP_HOST,
 
         port: Number(
-          process.env.SMTP_PORT ||
-            587
+          process.env.SMTP_PORT || 587
         ),
 
         secure: false,
@@ -33,54 +30,46 @@ async function sendEmail(
             process.env.SMTP_USER,
 
           pass:
-            process.env.SMTP_PASS
+            process.env.SMTP_PASS,
         },
 
         tls: {
-          rejectUnauthorized:
-            false
-        }
+          rejectUnauthorized: false,
+        },
       });
 
     /*
     |--------------------------------------------------------------------------
-    | ATTACHMENTS FIX
+    | ATTACHMENTS
     |--------------------------------------------------------------------------
     */
 
-    const mailAttachments =
-      (
-        data.attachments || []
-      ).map((file) => {
-        console.log(
-          "SMTP ATTACHMENT:",
+    const mailAttachments = (
+      data.attachments || []
+    ).map((file) => {
+      console.log(
+        "SMTP ATTACHMENT:",
+        file.filename,
+        Buffer.byteLength(
+          file.content,
+          "base64"
+        )
+      );
+
+      return {
+        filename:
           file.filename,
-          Buffer.byteLength(
+
+        content:
+          Buffer.from(
             file.content,
             "base64"
-          )
-        );
+          ),
 
-        return {
-          filename:
-            file.filename,
-
-          /*
-          |--------------------------------------------------------------------------
-          | IMPORTANT FIX
-          |--------------------------------------------------------------------------
-          */
-
-          content:
-            Buffer.from(
-              file.content,
-              "base64"
-            ),
-
-          contentType:
-            file.contentType
-        };
-      });
+        contentType:
+          file.contentType,
+      };
+    });
 
     console.log(
       "SMTP attachments count:",
@@ -89,7 +78,7 @@ async function sendEmail(
 
     /*
     |--------------------------------------------------------------------------
-    | SEND EMAIL
+    | SEND MAIL
     |--------------------------------------------------------------------------
     */
 
@@ -120,7 +109,7 @@ async function sendEmail(
           mailAttachments,
 
         inReplyTo:
-          data.in_reply_to
+          data.in_reply_to,
       });
 
     console.log(
@@ -131,22 +120,18 @@ async function sendEmail(
     return {
       success: true,
       messageId:
-        info.messageId
+        info.messageId,
     };
-  } catch (e) {
+  } catch (error) {
     console.error(
       "SMTP SEND ERROR:",
-      e
+      error
     );
 
     return {
       success: false,
       error:
-        e.message
+        error.message,
     };
   }
 }
-
-module.exports = {
-  sendEmail
-};
