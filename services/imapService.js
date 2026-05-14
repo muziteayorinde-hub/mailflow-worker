@@ -9,7 +9,7 @@ const MAIL_WORKER_TOKEN =
 
 /*
 |--------------------------------------------------------------------------
-| NON-BLOCKING EMAIL PERSIST
+| PERSIST EMAIL
 |--------------------------------------------------------------------------
 */
 
@@ -165,6 +165,7 @@ export async function fetchEmails(
               const fetcher =
                 imap.fetch(results, {
                   bodies: "",
+                  struct: true,
                   markSeen: false
                 });
 
@@ -200,7 +201,7 @@ export async function fetchEmails(
 
                   /*
                   |--------------------------------------------------------------------------
-                  | PARSE EMAIL
+                  | PARSE EMAIL + ATTACHMENTS
                   |--------------------------------------------------------------------------
                   */
 
@@ -211,6 +212,42 @@ export async function fetchEmails(
                         const parsed =
                           await simpleParser(
                             raw
+                          );
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | MAP ATTACHMENTS
+                        |--------------------------------------------------------------------------
+                        */
+
+                        const attachments =
+                          (
+                            parsed.attachments ||
+                            []
+                          ).map(
+                            (
+                              attachment
+                            ) => ({
+                              filename:
+                                attachment.filename,
+
+                              contentType:
+                                attachment.contentType,
+
+                              size:
+                                attachment.size,
+
+                              contentId:
+                                attachment.cid,
+
+                              disposition:
+                                attachment.contentDisposition,
+
+                              content:
+                                attachment.content?.toString(
+                                  "base64"
+                                )
+                            })
                           );
 
                         const email = {
@@ -265,7 +302,13 @@ export async function fetchEmails(
                           folder:
                             "INBOX",
 
-                          is_read: false
+                          is_read: false,
+
+                          has_attachments:
+                            attachments.length >
+                            0,
+
+                          attachments
                         };
 
                         /*
@@ -285,7 +328,9 @@ export async function fetchEmails(
 
                         console.log(
                           "EMAIL PARSED:",
-                          uid
+                          uid,
+                          "ATTACHMENTS:",
+                          attachments.length
                         );
                       } catch (e) {
                         console.error(
@@ -317,7 +362,7 @@ export async function fetchEmails(
 
               /*
               |--------------------------------------------------------------------------
-              | WAIT FOR PARSING TO COMPLETE
+              | WAIT FOR PARSING
               |--------------------------------------------------------------------------
               */
 
