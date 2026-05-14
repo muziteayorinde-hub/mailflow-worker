@@ -1,20 +1,4 @@
-import { Resend } from "resend";
-
-const resend = new Resend(
-  process.env.RESEND_API_KEY
-);
-
-/*
-|--------------------------------------------------------------------------
-| TEST SMTP
-|--------------------------------------------------------------------------
-*/
-
-export async function testSmtp() {
-  return {
-    success: true
-  };
-}
+const nodemailer = require("nodemailer");
 
 /*
 |--------------------------------------------------------------------------
@@ -22,49 +6,86 @@ export async function testSmtp() {
 |--------------------------------------------------------------------------
 */
 
-export async function sendEmail(data) {
+async function sendEmail(
+  data
+) {
   try {
     /*
     |--------------------------------------------------------------------------
-    | VALIDATION
+    | SMTP TRANSPORT
     |--------------------------------------------------------------------------
     */
 
-    if (!data?.to) {
-      return {
-        success: false,
-        error: "Recipient email is required"
-      };
-    }
+    const transporter =
+      nodemailer.createTransport({
+        host:
+          process.env.SMTP_HOST,
 
-    if (!data?.subject) {
-      return {
-        success: false,
-        error: "Email subject is required"
-      };
-    }
+        port: Number(
+          process.env.SMTP_PORT ||
+            587
+        ),
+
+        secure: false,
+
+        auth: {
+          user:
+            process.env.SMTP_USER,
+
+          pass:
+            process.env.SMTP_PASS
+        },
+
+        tls: {
+          rejectUnauthorized:
+            false
+        }
+      });
 
     /*
     |--------------------------------------------------------------------------
-    | NORMALIZE RECIPIENTS
+    | ATTACHMENTS FIX
     |--------------------------------------------------------------------------
     */
 
-    const to = Array.isArray(data.to)
-      ? data.to
-      : [data.to];
+    const mailAttachments =
+      (
+        data.attachments || []
+      ).map((file) => {
+        console.log(
+          "SMTP ATTACHMENT:",
+          file.filename,
+          Buffer.byteLength(
+            file.content,
+            "base64"
+          )
+        );
 
-    const cc = data.cc
-      ? Array.isArray(data.cc)
-        ? data.cc
-        : [data.cc]
-      : undefined;
+        return {
+          filename:
+            file.filename,
 
-    const bcc = data.bcc
-      ? Array.isArray(data.bcc)
-        ? data.bcc
-        : [data.bcc]
-      : undefined;
+          /*
+          |--------------------------------------------------------------------------
+          | IMPORTANT FIX
+          |--------------------------------------------------------------------------
+          */
+
+          content:
+            Buffer.from(
+              file.content,
+              "base64"
+            ),
+
+          contentType:
+            file.contentType
+        };
+      });
+
+    console.log(
+      "SMTP attachments count:",
+      mailAttachments.length
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -72,59 +93,60 @@ export async function sendEmail(data) {
     |--------------------------------------------------------------------------
     */
 
-    const response =
-      await resend.emails.send({
+    const info =
+      await transporter.sendMail({
         from:
-          "MailFlow <tests@energyelectronicszw.com>",
+          data.from,
 
-        to,
+        to:
+          data.to,
 
-        cc,
+        cc:
+          data.cc,
 
-        bcc,
+        bcc:
+          data.bcc,
 
-        reply_to:
-          data.replyTo ||
-          "tests@energyelectronicszw.com",
+        subject:
+          data.subject,
 
-        subject: data.subject,
+        text:
+          data.text,
 
         html:
-          data.html ||
-          `
-          <div style="font-family: Arial, sans-serif;">
-            <p>${data.text || ""}</p>
-          </div>
-          `,
+          data.html,
 
-        text: data.text || "",
+        attachments:
+          mailAttachments,
 
-        headers: {
-          "X-Entity-Ref-ID":
-            Date.now().toString()
-        }
+        inReplyTo:
+          data.in_reply_to
       });
 
     console.log(
-      "RESEND SUCCESS:",
-      response
+      "EMAIL SENT:",
+      info.messageId
     );
 
     return {
       success: true,
-      data: response
+      messageId:
+        info.messageId
     };
   } catch (e) {
     console.error(
-      "RESEND ERROR:",
+      "SMTP SEND ERROR:",
       e
     );
 
     return {
       success: false,
       error:
-        e?.message ||
-        "Failed to send email"
+        e.message
     };
   }
 }
+
+module.exports = {
+  sendEmail
+};
