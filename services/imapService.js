@@ -201,7 +201,7 @@ export async function fetchEmails(
 
                   /*
                   |--------------------------------------------------------------------------
-                  | PARSE EMAIL + ATTACHMENTS
+                  | PARSE EMAIL
                   |--------------------------------------------------------------------------
                   */
 
@@ -216,7 +216,7 @@ export async function fetchEmails(
 
                         /*
                         |--------------------------------------------------------------------------
-                        | MAP ATTACHMENTS
+                        | ATTACHMENTS
                         |--------------------------------------------------------------------------
                         */
 
@@ -243,10 +243,20 @@ export async function fetchEmails(
                               disposition:
                                 attachment.contentDisposition,
 
+                              /*
+                              |--------------------------------------------------------------------------
+                              | IMPORTANT FIX
+                              |--------------------------------------------------------------------------
+                              */
+
                               content:
-                                attachment.content?.toString(
-                                  "base64"
-                                )
+                                attachment.content
+                                  ? Buffer.from(
+                                      attachment.content
+                                    ).toString(
+                                      "base64"
+                                    )
+                                  : null
                             })
                           );
 
@@ -267,6 +277,14 @@ export async function fetchEmails(
 
                           to_address:
                             parsed.to?.text ||
+                            "",
+
+                          cc_address:
+                            parsed.cc?.text ||
+                            "",
+
+                          bcc_address:
+                            parsed.bcc?.text ||
                             "",
 
                           text_content:
