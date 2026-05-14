@@ -3,18 +3,34 @@ import cors from "cors";
 import dotenv from "dotenv";
 import net from "net";
 
-import { testImap } from "./services/imapService.js";
-import { testSmtp, sendEmail } from "./services/smtpService.js";
+import {
+  fetchEmails
+} from "./services/imapService.js";
+
+import {
+  testSmtp,
+  sendEmail
+} from "./services/smtpService.js";
 
 dotenv.config();
 
 const app = express();
 
+/*
+|--------------------------------------------------------------------------
+| MIDDLEWARE
+|--------------------------------------------------------------------------
+*/
+
 app.use(cors());
 
-app.use(express.json({ limit: "25mb" }));
+app.use(express.json({
+  limit: "25mb"
+}));
 
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({
+  extended: true
+}));
 
 /*
 |--------------------------------------------------------------------------
@@ -25,13 +41,13 @@ app.use(express.urlencoded({ extended: true }));
 app.get("/", (_req, res) => {
   return res.json({
     success: true,
-    status: "MailFlow Worker Running",
+    status: "MailFlow Worker Running"
   });
 });
 
 /*
 |--------------------------------------------------------------------------
-| GET RENDER OUTBOUND IP
+| GET SERVER IP
 |--------------------------------------------------------------------------
 */
 
@@ -45,21 +61,21 @@ app.get("/ip", async (_req, res) => {
 
     return res.json({
       success: true,
-      ip: data.ip,
+      ip: data.ip
     });
   } catch (e) {
     console.error("IP ERROR:", e);
 
     return res.status(500).json({
       success: false,
-      error: e?.message || "Failed to get IP",
+      error: e?.message || "Failed to get IP"
     });
   }
 });
 
 /*
 |--------------------------------------------------------------------------
-| SMTP NETWORK TEST
+| SMTP CHECK
 |--------------------------------------------------------------------------
 */
 
@@ -67,9 +83,7 @@ app.get("/smtp-check", async (_req, res) => {
   try {
     const socket = new net.Socket();
 
-    const timeoutMs = 15000;
-
-    socket.setTimeout(timeoutMs);
+    socket.setTimeout(15000);
 
     socket.connect(
       587,
@@ -79,7 +93,7 @@ app.get("/smtp-check", async (_req, res) => {
 
         res.json({
           success: true,
-          message: "SMTP port reachable",
+          message: "SMTP port reachable"
         });
 
         socket.destroy();
@@ -91,7 +105,7 @@ app.get("/smtp-check", async (_req, res) => {
 
       res.json({
         success: false,
-        error: err.message,
+        error: err.message
       });
     });
 
@@ -100,7 +114,7 @@ app.get("/smtp-check", async (_req, res) => {
 
       res.json({
         success: false,
-        error: "SMTP connection timeout",
+        error: "SMTP connection timeout"
       });
 
       socket.destroy();
@@ -110,7 +124,7 @@ app.get("/smtp-check", async (_req, res) => {
 
     return res.status(200).json({
       success: false,
-      error: e?.message || "SMTP test failed",
+      error: e?.message || "SMTP test failed"
     });
   }
 });
@@ -123,19 +137,18 @@ app.get("/smtp-check", async (_req, res) => {
 
 app.post("/mail/test", async (req, res) => {
   try {
-    console.log("MAIL TEST REQUEST:", req.body);
+    console.log("MAIL TEST REQUEST");
 
     const data = req.body;
 
     if (
       !data?.email ||
       !data?.password ||
-      !data?.imapHost ||
-      !data?.smtpHost
+      !data?.imapHost
     ) {
       return res.json({
         success: false,
-        error: "Missing mail configuration",
+        error: "Missing mail configuration"
       });
     }
 
@@ -145,11 +158,10 @@ app.post("/mail/test", async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    console.log("Testing IMAP...");
-
-    const imapResult = await testImap(data);
-
-    console.log("IMAP RESULT:", imapResult);
+    const imapResult = await fetchEmails({
+      ...data,
+      limit: 1
+    });
 
     if (!imapResult.success) {
       return res.json(imapResult);
@@ -161,11 +173,7 @@ app.post("/mail/test", async (req, res) => {
     |--------------------------------------------------------------------------
     */
 
-    console.log("Testing SMTP...");
-
     const smtpResult = await testSmtp(data);
-
-    console.log("SMTP RESULT:", smtpResult);
 
     if (!smtpResult.success) {
       return res.json(smtpResult);
@@ -173,14 +181,37 @@ app.post("/mail/test", async (req, res) => {
 
     return res.json({
       success: true,
-      message: "Mail account connected successfully",
+      message: "Mail account connected successfully"
     });
   } catch (e) {
     console.error("MAIL TEST ERROR:", e);
 
     return res.status(200).json({
       success: false,
-      error: e?.message || "Mail test failed",
+      error: e?.message || "Mail test failed"
+    });
+  }
+});
+
+/*
+|--------------------------------------------------------------------------
+| FETCH EMAILS
+|--------------------------------------------------------------------------
+*/
+
+app.post("/mail/fetch", async (req, res) => {
+  try {
+    console.log("FETCH EMAILS");
+
+    const result = await fetchEmails(req.body);
+
+    return res.json(result);
+  } catch (e) {
+    console.error("FETCH ERROR:", e);
+
+    return res.status(200).json({
+      success: false,
+      error: e?.message || "Fetch failed"
     });
   }
 });
@@ -193,7 +224,7 @@ app.post("/mail/test", async (req, res) => {
 
 app.post("/mail/send", async (req, res) => {
   try {
-    console.log("SEND EMAIL REQUEST");
+    console.log("SEND EMAIL");
 
     const result = await sendEmail(req.body);
 
@@ -203,7 +234,7 @@ app.post("/mail/send", async (req, res) => {
 
     return res.status(200).json({
       success: false,
-      error: e?.message || "Failed to send email",
+      error: e?.message || "Failed to send email"
     });
   }
 });
@@ -217,7 +248,7 @@ app.post("/mail/send", async (req, res) => {
 app.use((_req, res) => {
   return res.status(404).json({
     success: false,
-    error: "Route not found",
+    error: "Route not found"
   });
 });
 
@@ -232,7 +263,7 @@ app.use((err, _req, res, _next) => {
 
   return res.status(200).json({
     success: false,
-    error: err?.message || "Internal worker error",
+    error: err?.message || "Internal worker error"
   });
 });
 
