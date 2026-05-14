@@ -1,91 +1,135 @@
 import Imap from "node-imap";
 
-function mapNetError(e, label = "IMAP") {
-  const code = e?.code || e?.errno || "";
+function parseMessage(stream) {
+  return new Promise((resolve) => {
+    let buffer = "";
 
-  if (
-    [
-      "ETIMEDOUT",
-      "ESOCKET",
-      "ECONNREFUSED",
-      "ECONNRESET",
-      "EHOSTUNREACH",
-    ].includes(code)
-  ) {
-    return "The hosting provider is blocking external IMAP/SMTP access from cloud servers.";
-  }
+    stream.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+    });
 
-  if (/timeout/i.test(e?.message || "")) {
-    return `${label} connection timeout`;
-  }
-
-  return e?.message || `${label} error`;
+    stream.once("end", () => {
+      resolve(buffer);
+    });
+  });
 }
 
-export function testImap(data) {
-  console.log("Testing IMAP:", {
-    host: data.imapHost,
-    port: data.imapPort,
-  });
-
+export async function fetchEmails(data) {
   return new Promise((resolve) => {
-    const client = new Imap({
+    const imap = new Imap({
       user: data.email,
-
       password: data.password,
-
       host: data.imapHost,
-
       port: Number(data.imapPort || 993),
-
-      tls: data.tls !== false,
-
+      tls: true,
       tlsOptions: {
-        rejectUnauthorized:
-          data?.tlsOptions?.rejectUnauthorized !== false,
+        rejectUnauthorized: false,
       },
-
-      authTimeout: Number(data.authTimeout || 60000),
-
-      connTimeout: Number(data.connTimeout || 60000),
+      authTimeout: 30000,
+      connTimeout: 30000,
     });
 
-    let settled = false;
+    const emails = [];
 
-    const done = (result) => {
-      if (!settled) {
-        settled = true;
+    imap.once("ready", () => {
+      imap.openBox("INBOX", true, (err) => {
+        if (err) {
+          imap.end();
 
-        try {
-          client.end();
-        } catch {}
+          return resolve({
+            success: false,
+            error: err.message,
+          });
+        }
 
-        resolve(result);
-      }
-    };
+        imap.search(["ALL"], (err, results) => {
+          if (err) {
+            imap.end();
 
-    client.once("ready", () => {
-      done({
-        success: true,
+            return resolve({
+              success: false,
+              error: err.message,
+            });
+          }
+
+          if (!results || !results.length) {
+            imap.end();
+
+            return resolve({
+              success: true,
+              emails: [],
+            });
+          }
+
+          const latest = results.slice(-20);
+
+          const fetcher = imap.fetch(latest, {
+            bodies: "",
+            struct: true,
+          });
+
+          fetcher.on("message", (msg) => {
+            const email = {
+              subject: "",
+              from: "",
+              date: "",
+              body: "",
+            };
+
+            msg.on("body", async (stream) => {
+              const raw = await parseMessage(stream);
+
+              email.body = raw;
+            });
+
+            msg.once("attributes", (attrs) => {
+              const envelope = attrs.envelope;
+
+              email.subject =
+                envelope?.subject || "";
+
+              email.date =
+                envelope?.date || "";
+
+              email.from =
+                envelope?.from?.[0]?.mailbox +
+                  "@" +
+                  envelope?.from?.[0]?.host || "";
+            });
+
+            msg.once("end", () => {
+              emails.push(email);
+            });
+          });
+
+          fetcher.once("error", (err) => {
+            imap.end();
+
+            return resolve({
+              success: false,
+              error: err.message,
+            });
+          });
+
+          fetcher.once("end", () => {
+            imap.end();
+
+            return resolve({
+              success: true,
+              emails,
+            });
+          });
+        });
       });
     });
 
-    client.once("error", (e) => {
-      done({
+    imap.once("error", (err) => {
+      return resolve({
         success: false,
-        error: mapNetError(e, "IMAP"),
+        error: err.message,
       });
     });
 
-    client.once("end", () => {});
-
-    try {
-      client.connect();
-    } catch (e) {
-      done({
-        success: false,
-        error: mapNetError(e, "IMAP"),
-      });
-    }
+    imap.connect();
   });
 }
