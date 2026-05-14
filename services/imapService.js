@@ -1,8 +1,11 @@
 import Imap from "node-imap";
 import { simpleParser } from "mailparser";
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const MAIL_WORKER_TOKEN = process.env.MAIL_WORKER_TOKEN;
+const SUPABASE_URL =
+  process.env.SUPABASE_URL;
+
+const MAIL_WORKER_TOKEN =
+  process.env.MAIL_WORKER_TOKEN;
 
 /*
 |--------------------------------------------------------------------------
@@ -10,9 +13,15 @@ const MAIL_WORKER_TOKEN = process.env.MAIL_WORKER_TOKEN;
 |--------------------------------------------------------------------------
 */
 
-async function persistEmail(accountId, email) {
+async function persistEmail(
+  accountId,
+  email
+) {
   try {
-    console.log("PERSISTING EMAIL:", email.uid);
+    console.log(
+      "PERSISTING EMAIL:",
+      email.uid
+    );
 
     const response = await fetch(
       `${SUPABASE_URL}/functions/v1/imap-push`,
@@ -20,18 +29,22 @@ async function persistEmail(accountId, email) {
         method: "POST",
 
         headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${MAIL_WORKER_TOKEN}`,
+          "Content-Type":
+            "application/json",
+
+          Authorization:
+            `Bearer ${MAIL_WORKER_TOKEN}`
         },
 
         body: JSON.stringify({
           account_id: accountId,
-          email,
-        }),
+          email
+        })
       }
     );
 
-    const text = await response.text();
+    const text =
+      await response.text();
 
     console.log(
       "PERSIST RESPONSE:",
@@ -40,13 +53,16 @@ async function persistEmail(accountId, email) {
     );
 
     return {
-      success: response.ok,
+      success: response.ok
     };
   } catch (e) {
-    console.error("PERSIST ERROR:", e);
+    console.error(
+      "PERSIST ERROR:",
+      e
+    );
 
     return {
-      success: false,
+      success: false
     };
   }
 }
@@ -57,7 +73,9 @@ async function persistEmail(accountId, email) {
 |--------------------------------------------------------------------------
 */
 
-export async function fetchEmails(data) {
+export async function fetchEmails(
+  data
+) {
   return new Promise((resolve) => {
     const imap = new Imap({
       user: data.email,
@@ -74,11 +92,11 @@ export async function fetchEmails(data) {
       tls: true,
 
       tlsOptions: {
-        rejectUnauthorized: false,
+        rejectUnauthorized: false
       },
 
       authTimeout: 30000,
-      connTimeout: 30000,
+      connTimeout: 30000
     });
 
     const emails = [];
@@ -95,7 +113,7 @@ export async function fetchEmails(data) {
 
             return resolve({
               success: false,
-              error: err.message,
+              error: err.message
             });
           }
 
@@ -128,7 +146,7 @@ export async function fetchEmails(data) {
 
                 return resolve({
                   success: false,
-                  error: err.message,
+                  error: err.message
                 });
               }
 
@@ -140,14 +158,14 @@ export async function fetchEmails(data) {
 
                 return resolve({
                   success: true,
-                  emails: [],
+                  emails: []
                 });
               }
 
               const fetcher =
                 imap.fetch(results, {
                   bodies: "",
-                  markSeen: false,
+                  markSeen: false
                 });
 
               fetcher.on(
@@ -182,7 +200,7 @@ export async function fetchEmails(data) {
 
                   /*
                   |--------------------------------------------------------------------------
-                  | PARSE + INSTANT NON-BLOCKING PERSIST
+                  | PARSE EMAIL
                   |--------------------------------------------------------------------------
                   */
 
@@ -247,7 +265,7 @@ export async function fetchEmails(data) {
                           folder:
                             "INBOX",
 
-                          is_read: false,
+                          is_read: false
                         };
 
                         /*
@@ -261,10 +279,12 @@ export async function fetchEmails(data) {
                           email
                         );
 
-                        emails.push(email);
+                        emails.push(
+                          email
+                        );
 
                         console.log(
-                          "INSTANT EMAIL:",
+                          "EMAIL PARSED:",
                           uid
                         );
                       } catch (e) {
@@ -290,16 +310,43 @@ export async function fetchEmails(data) {
 
                   return resolve({
                     success: false,
-                    error: err.message,
+                    error: err.message
                   });
                 }
               );
 
+              /*
+              |--------------------------------------------------------------------------
+              | WAIT FOR PARSING TO COMPLETE
+              |--------------------------------------------------------------------------
+              */
+
               fetcher.once(
                 "end",
-                () => {
+                async () => {
                   console.log(
                     "FETCH COMPLETE"
+                  );
+
+                  await new Promise(
+                    (resolveDone) => {
+                      const check =
+                        () => {
+                          if (
+                            emails.length >=
+                            results.length
+                          ) {
+                            return resolveDone();
+                          }
+
+                          setTimeout(
+                            check,
+                            100
+                          );
+                        };
+
+                      check();
+                    }
                   );
 
                   imap.end();
@@ -317,7 +364,7 @@ export async function fetchEmails(data) {
 
                   return resolve({
                     success: true,
-                    emails,
+                    emails
                   });
                 }
               );
@@ -335,7 +382,7 @@ export async function fetchEmails(data) {
 
       return resolve({
         success: false,
-        error: err.message,
+        error: err.message
       });
     });
 
