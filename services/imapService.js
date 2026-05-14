@@ -23,10 +23,10 @@ export async function fetchEmails(data) {
       port: Number(data.imapPort || 993),
       tls: true,
       tlsOptions: {
-        rejectUnauthorized: false,
+        rejectUnauthorized: false
       },
       authTimeout: 30000,
-      connTimeout: 30000,
+      connTimeout: 30000
     });
 
     const emails = [];
@@ -38,7 +38,7 @@ export async function fetchEmails(data) {
 
           return resolve({
             success: false,
-            error: err.message,
+            error: err.message
           });
         }
 
@@ -48,7 +48,7 @@ export async function fetchEmails(data) {
 
             return resolve({
               success: false,
-              error: err.message,
+              error: err.message
             });
           }
 
@@ -57,7 +57,7 @@ export async function fetchEmails(data) {
 
             return resolve({
               success: true,
-              emails: [],
+              emails: []
             });
           }
 
@@ -65,7 +65,7 @@ export async function fetchEmails(data) {
 
           const fetcher = imap.fetch(latest, {
             bodies: "",
-            struct: true,
+            struct: true
           });
 
           fetcher.on("message", (msg) => {
@@ -73,7 +73,7 @@ export async function fetchEmails(data) {
               subject: "",
               from: "",
               date: "",
-              body: "",
+              body: ""
             };
 
             msg.on("body", async (stream) => {
@@ -107,7 +107,7 @@ export async function fetchEmails(data) {
 
             return resolve({
               success: false,
-              error: err.message,
+              error: err.message
             });
           });
 
@@ -116,7 +116,7 @@ export async function fetchEmails(data) {
 
             return resolve({
               success: true,
-              emails,
+              emails
             });
           });
         });
@@ -126,7 +126,7 @@ export async function fetchEmails(data) {
     imap.once("error", (err) => {
       return resolve({
         success: false,
-        error: err.message,
+        error: err.message
       });
     });
 
