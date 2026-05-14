@@ -9,12 +9,6 @@ function cleanAddress(addr) {
   return `${mailbox}@${host}`;
 }
 
-function getBody(buffer) {
-  return buffer
-    ?.toString("utf8")
-    ?.replace(/\r\n/g, "\n") || "";
-}
-
 export async function fetchEmails(data) {
   return new Promise((resolve) => {
     const imap = new Imap({
@@ -36,7 +30,6 @@ export async function fetchEmails(data) {
       },
 
       authTimeout: 30000,
-
       connTimeout: 30000
     });
 
@@ -48,7 +41,7 @@ export async function fetchEmails(data) {
       imap.openBox(
         "INBOX",
         true,
-        (err, box) => {
+        (err) => {
           if (err) {
             imap.end();
 
@@ -72,7 +65,7 @@ export async function fetchEmails(data) {
 
               if (
                 !results ||
-                results.length === 0
+                !results.length
               ) {
                 imap.end();
 
@@ -82,58 +75,55 @@ export async function fetchEmails(data) {
                 });
               }
 
-              /*
-              |--------------------------------------------------------------------------
-              | GET LATEST EMAILS
-              |--------------------------------------------------------------------------
-              */
-
               const latest =
                 results.slice(-25);
 
               const fetcher =
                 imap.fetch(latest, {
-                  bodies: ["HEADER", "TEXT"],
+                  bodies: ["TEXT"],
                   struct: true
                 });
 
               fetcher.on(
                 "message",
                 (msg) => {
+                  let body = "";
+
                   const email = {
-                    id: "",
-                    from: "",
-                    to: "",
+                    id:
+                      Date.now() +
+                      "_" +
+                      Math.random(),
+
                     subject: "",
-                    date: "",
-                    body: ""
+
+                    from_address: "",
+
+                    to_address:
+                      data.email,
+
+                    text_content: "",
+
+                    html_content: "",
+
+                    received_at:
+                      new Date().toISOString(),
+
+                    is_read: true,
+
+                    folder: "INBOX"
                   };
 
                   msg.on(
                     "body",
-                    (stream, info) => {
-                      let buffer = "";
-
+                    (stream) => {
                       stream.on(
                         "data",
                         (chunk) => {
-                          buffer +=
+                          body +=
                             chunk.toString(
                               "utf8"
                             );
-                        }
-                      );
-
-                      stream.once(
-                        "end",
-                        () => {
-                          if (
-                            info.which ===
-                            "TEXT"
-                          ) {
-                            email.body =
-                              buffer;
-                          }
                         }
                       );
                     }
@@ -142,24 +132,30 @@ export async function fetchEmails(data) {
                   msg.once(
                     "attributes",
                     (attrs) => {
-                      email.id =
-                        attrs.uid?.toString();
-
                       const env =
                         attrs.envelope;
 
+                      email.id =
+                        attrs.uid?.toString() ||
+                        email.id;
+
                       email.subject =
-                        env?.subject || "";
+                        env?.subject ||
+                        "(No Subject)";
 
-                      email.date =
-                        env?.date || "";
+                      email.received_at =
+                        env?.date
+                          ? new Date(
+                              env.date
+                            ).toISOString()
+                          : new Date().toISOString();
 
-                      email.from =
+                      email.from_address =
                         cleanAddress(
                           env?.from?.[0]
                         );
 
-                      email.to =
+                      email.to_address =
                         cleanAddress(
                           env?.to?.[0]
                         );
@@ -169,6 +165,12 @@ export async function fetchEmails(data) {
                   msg.once(
                     "end",
                     () => {
+                      email.text_content =
+                        body;
+
+                      email.html_content =
+                        `<pre>${body}</pre>`;
+
                       emails.push(email);
                     }
                   );
@@ -178,11 +180,6 @@ export async function fetchEmails(data) {
               fetcher.once(
                 "error",
                 (err) => {
-                  console.error(
-                    "FETCH ERROR:",
-                    err
-                  );
-
                   imap.end();
 
                   return resolve({
@@ -195,20 +192,23 @@ export async function fetchEmails(data) {
               fetcher.once(
                 "end",
                 () => {
-                  console.log(
-                    "FETCH COMPLETE"
-                  );
-
                   imap.end();
 
                   emails.sort((a, b) => {
                     return (
                       new Date(
-                        b.date
+                        b.received_at
                       ) -
-                      new Date(a.date)
+                      new Date(
+                        a.received_at
+                      )
                     );
                   });
+
+                  console.log(
+                    "SYNCED EMAILS:",
+                    emails.length
+                  );
 
                   return resolve({
                     success: true,
@@ -232,10 +232,6 @@ export async function fetchEmails(data) {
         success: false,
         error: err.message
       });
-    });
-
-    imap.once("end", () => {
-      console.log("IMAP CLOSED");
     });
 
     imap.connect();
