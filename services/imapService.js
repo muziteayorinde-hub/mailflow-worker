@@ -1,17 +1,18 @@
 import Imap from "node-imap";
 
-function parseMessage(stream) {
-  return new Promise((resolve) => {
-    let buffer = "";
+function cleanAddress(addr) {
+  if (!addr) return "";
 
-    stream.on("data", (chunk) => {
-      buffer += chunk.toString("utf8");
-    });
+  const mailbox = addr.mailbox || "";
+  const host = addr.host || "";
 
-    stream.once("end", () => {
-      resolve(buffer);
-    });
-  });
+  return `${mailbox}@${host}`;
+}
+
+function getBody(buffer) {
+  return buffer
+    ?.toString("utf8")
+    ?.replace(/\r\n/g, "\n") || "";
 }
 
 export async function fetchEmails(data) {
@@ -19,30 +20,35 @@ export async function fetchEmails(data) {
     const imap = new Imap({
       user: data.email,
       password: data.password,
-      host: data.imapHost,
-      port: Number(data.imapPort || 993),
+
+      host:
+        data.imapHost ||
+        "business24.web-hosting.com",
+
+      port: Number(
+        data.imapPort || 993
+      ),
+
       tls: true,
+
       tlsOptions: {
         rejectUnauthorized: false
       },
+
       authTimeout: 30000,
+
       connTimeout: 30000
     });
 
     const emails = [];
 
     imap.once("ready", () => {
-      imap.openBox("INBOX", true, (err) => {
-        if (err) {
-          imap.end();
+      console.log("IMAP READY");
 
-          return resolve({
-            success: false,
-            error: err.message
-          });
-        }
-
-        imap.search(["ALL"], (err, results) => {
+      imap.openBox(
+        "INBOX",
+        true,
+        (err, box) => {
           if (err) {
             imap.end();
 
@@ -52,82 +58,184 @@ export async function fetchEmails(data) {
             });
           }
 
-          if (!results || !results.length) {
-            imap.end();
+          imap.search(
+            ["ALL"],
+            (err, results) => {
+              if (err) {
+                imap.end();
 
-            return resolve({
-              success: true,
-              emails: []
-            });
-          }
+                return resolve({
+                  success: false,
+                  error: err.message
+                });
+              }
 
-          const latest = results.slice(-20);
+              if (
+                !results ||
+                results.length === 0
+              ) {
+                imap.end();
 
-          const fetcher = imap.fetch(latest, {
-            bodies: "",
-            struct: true
-          });
+                return resolve({
+                  success: true,
+                  emails: []
+                });
+              }
 
-          fetcher.on("message", (msg) => {
-            const email = {
-              subject: "",
-              from: "",
-              date: "",
-              body: ""
-            };
+              /*
+              |--------------------------------------------------------------------------
+              | GET LATEST EMAILS
+              |--------------------------------------------------------------------------
+              */
 
-            msg.on("body", async (stream) => {
-              const raw = await parseMessage(stream);
+              const latest =
+                results.slice(-25);
 
-              email.body = raw;
-            });
+              const fetcher =
+                imap.fetch(latest, {
+                  bodies: ["HEADER", "TEXT"],
+                  struct: true
+                });
 
-            msg.once("attributes", (attrs) => {
-              const envelope = attrs.envelope;
+              fetcher.on(
+                "message",
+                (msg) => {
+                  const email = {
+                    id: "",
+                    from: "",
+                    to: "",
+                    subject: "",
+                    date: "",
+                    body: ""
+                  };
 
-              email.subject =
-                envelope?.subject || "";
+                  msg.on(
+                    "body",
+                    (stream, info) => {
+                      let buffer = "";
 
-              email.date =
-                envelope?.date || "";
+                      stream.on(
+                        "data",
+                        (chunk) => {
+                          buffer +=
+                            chunk.toString(
+                              "utf8"
+                            );
+                        }
+                      );
 
-              email.from =
-                envelope?.from?.[0]?.mailbox +
-                  "@" +
-                  envelope?.from?.[0]?.host || "";
-            });
+                      stream.once(
+                        "end",
+                        () => {
+                          if (
+                            info.which ===
+                            "TEXT"
+                          ) {
+                            email.body =
+                              buffer;
+                          }
+                        }
+                      );
+                    }
+                  );
 
-            msg.once("end", () => {
-              emails.push(email);
-            });
-          });
+                  msg.once(
+                    "attributes",
+                    (attrs) => {
+                      email.id =
+                        attrs.uid?.toString();
 
-          fetcher.once("error", (err) => {
-            imap.end();
+                      const env =
+                        attrs.envelope;
 
-            return resolve({
-              success: false,
-              error: err.message
-            });
-          });
+                      email.subject =
+                        env?.subject || "";
 
-          fetcher.once("end", () => {
-            imap.end();
+                      email.date =
+                        env?.date || "";
 
-            return resolve({
-              success: true,
-              emails
-            });
-          });
-        });
-      });
+                      email.from =
+                        cleanAddress(
+                          env?.from?.[0]
+                        );
+
+                      email.to =
+                        cleanAddress(
+                          env?.to?.[0]
+                        );
+                    }
+                  );
+
+                  msg.once(
+                    "end",
+                    () => {
+                      emails.push(email);
+                    }
+                  );
+                }
+              );
+
+              fetcher.once(
+                "error",
+                (err) => {
+                  console.error(
+                    "FETCH ERROR:",
+                    err
+                  );
+
+                  imap.end();
+
+                  return resolve({
+                    success: false,
+                    error: err.message
+                  });
+                }
+              );
+
+              fetcher.once(
+                "end",
+                () => {
+                  console.log(
+                    "FETCH COMPLETE"
+                  );
+
+                  imap.end();
+
+                  emails.sort((a, b) => {
+                    return (
+                      new Date(
+                        b.date
+                      ) -
+                      new Date(a.date)
+                    );
+                  });
+
+                  return resolve({
+                    success: true,
+                    emails
+                  });
+                }
+              );
+            }
+          );
+        }
+      );
     });
 
     imap.once("error", (err) => {
+      console.error(
+        "IMAP ERROR:",
+        err
+      );
+
       return resolve({
         success: false,
         error: err.message
       });
+    });
+
+    imap.once("end", () => {
+      console.log("IMAP CLOSED");
     });
 
     imap.connect();
