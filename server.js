@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import net from "net";
 
 import { testImap } from "./services/imapService.js";
 import { testSmtp, sendEmail } from "./services/smtpService.js";
@@ -58,6 +59,64 @@ app.get("/ip", async (_req, res) => {
 
 /*
 |--------------------------------------------------------------------------
+| SMTP NETWORK TEST
+|--------------------------------------------------------------------------
+*/
+
+app.get("/smtp-check", async (_req, res) => {
+  try {
+    const socket = new net.Socket();
+
+    const timeoutMs = 15000;
+
+    socket.setTimeout(timeoutMs);
+
+    socket.connect(
+      587,
+      "business24.web-hosting.com",
+      () => {
+        console.log("SMTP PORT REACHABLE");
+
+        res.json({
+          success: true,
+          message: "SMTP port reachable",
+        });
+
+        socket.destroy();
+      }
+    );
+
+    socket.on("error", (err) => {
+      console.error("SMTP SOCKET ERROR:", err);
+
+      res.json({
+        success: false,
+        error: err.message,
+      });
+    });
+
+    socket.on("timeout", () => {
+      console.error("SMTP SOCKET TIMEOUT");
+
+      res.json({
+        success: false,
+        error: "SMTP connection timeout",
+      });
+
+      socket.destroy();
+    });
+  } catch (e) {
+    console.error("SMTP CHECK ERROR:", e);
+
+    return res.status(200).json({
+      success: false,
+      error: e?.message || "SMTP test failed",
+    });
+  }
+});
+
+/*
+|--------------------------------------------------------------------------
 | TEST MAIL ACCOUNT
 |--------------------------------------------------------------------------
 */
@@ -67,12 +126,6 @@ app.post("/mail/test", async (req, res) => {
     console.log("MAIL TEST REQUEST:", req.body);
 
     const data = req.body;
-
-    /*
-    |--------------------------------------------------------------------------
-    | VALIDATION
-    |--------------------------------------------------------------------------
-    */
 
     if (
       !data?.email ||
@@ -117,12 +170,6 @@ app.post("/mail/test", async (req, res) => {
     if (!smtpResult.success) {
       return res.json(smtpResult);
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | SUCCESS
-    |--------------------------------------------------------------------------
-    */
 
     return res.json({
       success: true,
@@ -198,5 +245,7 @@ app.use((err, _req, res, _next) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 MailFlow Worker running on port ${PORT}`);
+  console.log(
+    `🚀 MailFlow Worker running on port ${PORT}`
+  );
 });
