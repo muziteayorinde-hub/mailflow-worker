@@ -1,10 +1,14 @@
 import Imap from "node-imap";
+import { simpleParser } from "mailparser";
 
-function cleanAddress(addr) {
-  if (!addr) return "";
+function cleanAddress(addressObject) {
+  if (!addressObject) return "";
 
-  const mailbox = addr.mailbox || "";
-  const host = addr.host || "";
+  const mailbox =
+    addressObject.mailbox || "";
+
+  const host =
+    addressObject.host || "";
 
   return `${mailbox}@${host}`;
 }
@@ -36,8 +40,6 @@ export async function fetchEmails(data) {
     const emails = [];
 
     imap.once("ready", () => {
-      console.log("IMAP READY");
-
       imap.openBox(
         "INBOX",
         true,
@@ -65,7 +67,7 @@ export async function fetchEmails(data) {
 
               if (
                 !results ||
-                !results.length
+                results.length === 0
               ) {
                 imap.end();
 
@@ -80,39 +82,16 @@ export async function fetchEmails(data) {
 
               const fetcher =
                 imap.fetch(latest, {
-                  bodies: ["TEXT"],
+                  bodies: "",
                   struct: true
                 });
 
               fetcher.on(
                 "message",
                 (msg) => {
-                  let body = "";
+                  let rawEmail = "";
 
-                  const email = {
-                    id:
-                      Date.now() +
-                      "_" +
-                      Math.random(),
-
-                    subject: "",
-
-                    from_address: "",
-
-                    to_address:
-                      data.email,
-
-                    text_content: "",
-
-                    html_content: "",
-
-                    received_at:
-                      new Date().toISOString(),
-
-                    is_read: true,
-
-                    folder: "INBOX"
-                  };
+                  let uid = "";
 
                   msg.on(
                     "body",
@@ -120,7 +99,7 @@ export async function fetchEmails(data) {
                       stream.on(
                         "data",
                         (chunk) => {
-                          body +=
+                          rawEmail +=
                             chunk.toString(
                               "utf8"
                             );
@@ -132,46 +111,64 @@ export async function fetchEmails(data) {
                   msg.once(
                     "attributes",
                     (attrs) => {
-                      const env =
-                        attrs.envelope;
-
-                      email.id =
-                        attrs.uid?.toString() ||
-                        email.id;
-
-                      email.subject =
-                        env?.subject ||
-                        "(No Subject)";
-
-                      email.received_at =
-                        env?.date
-                          ? new Date(
-                              env.date
-                            ).toISOString()
-                          : new Date().toISOString();
-
-                      email.from_address =
-                        cleanAddress(
-                          env?.from?.[0]
-                        );
-
-                      email.to_address =
-                        cleanAddress(
-                          env?.to?.[0]
-                        );
+                      uid =
+                        attrs.uid?.toString();
                     }
                   );
 
                   msg.once(
                     "end",
-                    () => {
-                      email.text_content =
-                        body;
+                    async () => {
+                      try {
+                        const parsed =
+                          await simpleParser(
+                            rawEmail
+                          );
 
-                      email.html_content =
-                        `<pre>${body}</pre>`;
+                        emails.push({
+                          id:
+                            uid ||
+                            Date.now().toString(),
 
-                      emails.push(email);
+                          subject:
+                            parsed.subject ||
+                            "(No Subject)",
+
+                          from_address:
+                            parsed.from?.text ||
+                            "",
+
+                          to_address:
+                            parsed.to?.text ||
+                            "",
+
+                          text_content:
+                            parsed.text ||
+                            "",
+
+                          html_content:
+                            parsed.html ||
+                            parsed.textAsHtml ||
+                            "",
+
+                          received_at:
+                            parsed.date
+                              ? new Date(
+                                  parsed.date
+                                ).toISOString()
+                              : new Date().toISOString(),
+
+                          folder:
+                            "INBOX",
+
+                          is_read: true
+                        });
+                      } catch (e) {
+                        console.error(
+                          "PARSE ERROR:",
+                          e
+                        );
+                      }
                     }
                   );
                 }
@@ -205,11 +202,6 @@ export async function fetchEmails(data) {
                     );
                   });
 
-                  console.log(
-                    "SYNCED EMAILS:",
-                    emails.length
-                  );
-
                   return resolve({
                     success: true,
                     emails
@@ -223,11 +215,6 @@ export async function fetchEmails(data) {
     });
 
     imap.once("error", (err) => {
-      console.error(
-        "IMAP ERROR:",
-        err
-      );
-
       return resolve({
         success: false,
         error: err.message
