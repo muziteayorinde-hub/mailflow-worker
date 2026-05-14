@@ -4,50 +4,127 @@ const resend = new Resend(
   process.env.RESEND_API_KEY
 );
 
+/*
+|--------------------------------------------------------------------------
+| TEST SMTP
+|--------------------------------------------------------------------------
+*/
+
 export async function testSmtp() {
   return {
-    success: true,
+    success: true
   };
 }
 
+/*
+|--------------------------------------------------------------------------
+| SEND EMAIL
+|--------------------------------------------------------------------------
+*/
+
 export async function sendEmail(data) {
   try {
-    const result = await resend.emails.send({
-      from:
-        data.from ||
-        `MailFlow <tests@energyelectronicszw.com>`,
+    /*
+    |--------------------------------------------------------------------------
+    | VALIDATION
+    |--------------------------------------------------------------------------
+    */
 
-      to: data.to,
+    if (!data?.to) {
+      return {
+        success: false,
+        error: "Recipient email is required"
+      };
+    }
 
-      cc: data.cc,
+    if (!data?.subject) {
+      return {
+        success: false,
+        error: "Email subject is required"
+      };
+    }
 
-      bcc: data.bcc,
+    /*
+    |--------------------------------------------------------------------------
+    | NORMALIZE RECIPIENTS
+    |--------------------------------------------------------------------------
+    */
 
-      subject: data.subject,
+    const to = Array.isArray(data.to)
+      ? data.to
+      : [data.to];
 
-      html:
-        data.html ||
-        `<p>${data.text || "No content"}</p>`,
+    const cc = data.cc
+      ? Array.isArray(data.cc)
+        ? data.cc
+        : [data.cc]
+      : undefined;
 
-      text: data.text,
+    const bcc = data.bcc
+      ? Array.isArray(data.bcc)
+        ? data.bcc
+        : [data.bcc]
+      : undefined;
 
-      reply_to:
-        data.replyTo ||
-        data.email,
-    });
+    /*
+    |--------------------------------------------------------------------------
+    | SEND EMAIL
+    |--------------------------------------------------------------------------
+    */
+
+    const response =
+      await resend.emails.send({
+        from:
+          "MailFlow <tests@energyelectronicszw.com>",
+
+        to,
+
+        cc,
+
+        bcc,
+
+        reply_to:
+          data.replyTo ||
+          "tests@energyelectronicszw.com",
+
+        subject: data.subject,
+
+        html:
+          data.html ||
+          `
+          <div style="font-family: Arial, sans-serif;">
+            <p>${data.text || ""}</p>
+          </div>
+          `,
+
+        text: data.text || "",
+
+        headers: {
+          "X-Entity-Ref-ID":
+            Date.now().toString()
+        }
+      });
+
+    console.log(
+      "RESEND SUCCESS:",
+      response
+    );
 
     return {
       success: true,
-      data: result,
+      data: response
     };
   } catch (e) {
-    console.error("RESEND ERROR:", e);
+    console.error(
+      "RESEND ERROR:",
+      e
+    );
 
     return {
       success: false,
       error:
         e?.message ||
-        "Failed to send email",
+        "Failed to send email"
     };
   }
 }
