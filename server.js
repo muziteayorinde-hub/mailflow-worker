@@ -131,15 +131,15 @@ app.get("/smtp-check", async (_req, res) => {
 
 /*
 |--------------------------------------------------------------------------
-| TEST MAIL ACCOUNT
+| TEST ACCOUNT
 |--------------------------------------------------------------------------
 */
 
 app.post("/mail/test", async (req, res) => {
   try {
-    console.log("MAIL TEST REQUEST");
-
     const data = req.body;
+
+    console.log("MAIL TEST");
 
     if (
       !data?.email ||
@@ -150,33 +150,6 @@ app.post("/mail/test", async (req, res) => {
         success: false,
         error: "Missing mail configuration"
       });
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | TEST IMAP
-    |--------------------------------------------------------------------------
-    */
-
-    const imapResult = await fetchEmails({
-      ...data,
-      limit: 1
-    });
-
-    if (!imapResult.success) {
-      return res.json(imapResult);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | TEST SMTP
-    |--------------------------------------------------------------------------
-    */
-
-    const smtpResult = await testSmtp(data);
-
-    if (!smtpResult.success) {
-      return res.json(smtpResult);
     }
 
     return res.json({
