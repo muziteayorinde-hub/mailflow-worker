@@ -1,18 +1,6 @@
 import Imap from "node-imap";
 import { simpleParser } from "mailparser";
 
-function cleanAddress(addressObject) {
-  if (!addressObject) return "";
-
-  const mailbox =
-    addressObject.mailbox || "";
-
-  const host =
-    addressObject.host || "";
-
-  return `${mailbox}@${host}`;
-}
-
 export async function fetchEmails(data) {
   return new Promise((resolve) => {
     const imap = new Imap({
@@ -67,7 +55,7 @@ export async function fetchEmails(data) {
 
               if (
                 !results ||
-                results.length === 0
+                !results.length
               ) {
                 imap.end();
 
@@ -83,13 +71,13 @@ export async function fetchEmails(data) {
               const fetcher =
                 imap.fetch(latest, {
                   bodies: "",
-                  struct: true
+                  markSeen: false
                 });
 
               fetcher.on(
                 "message",
                 (msg) => {
-                  let rawEmail = "";
+                  let raw = "";
 
                   let uid = "";
 
@@ -99,7 +87,7 @@ export async function fetchEmails(data) {
                       stream.on(
                         "data",
                         (chunk) => {
-                          rawEmail +=
+                          raw +=
                             chunk.toString(
                               "utf8"
                             );
@@ -112,7 +100,8 @@ export async function fetchEmails(data) {
                     "attributes",
                     (attrs) => {
                       uid =
-                        attrs.uid?.toString();
+                        attrs.uid?.toString() ||
+                        Date.now().toString();
                     }
                   );
 
@@ -122,13 +111,11 @@ export async function fetchEmails(data) {
                       try {
                         const parsed =
                           await simpleParser(
-                            rawEmail
+                            raw
                           );
 
                         emails.push({
-                          id:
-                            uid ||
-                            Date.now().toString(),
+                          id: uid,
 
                           subject:
                             parsed.subject ||
@@ -148,8 +135,10 @@ export async function fetchEmails(data) {
 
                           html_content:
                             parsed.html ||
-                            parsed.textAsHtml ||
-                            "",
+                            `<pre>${
+                              parsed.text ||
+                              ""
+                            }</pre>`,
 
                           received_at:
                             parsed.date
@@ -161,11 +150,11 @@ export async function fetchEmails(data) {
                           folder:
                             "INBOX",
 
-                          is_read: true
+                          is_read: false
                         });
                       } catch (e) {
                         console.error(
-                          "PARSE ERROR:",
+                          "MAIL PARSE ERROR:",
                           e
                         );
                       }
