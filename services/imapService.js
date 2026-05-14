@@ -1,7 +1,74 @@
 import Imap from "node-imap";
 import { simpleParser } from "mailparser";
 
-export async function fetchEmails(data) {
+const SUPABASE_URL =
+  process.env.SUPABASE_URL;
+
+const MAIL_WORKER_TOKEN =
+  process.env.MAIL_WORKER_TOKEN;
+
+/*
+|--------------------------------------------------------------------------
+| PUSH SINGLE EMAIL TO SUPABASE
+|--------------------------------------------------------------------------
+*/
+
+async function persistEmail(
+  accountId,
+  email
+) {
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/functions/v1/imap-push`,
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+
+          Authorization:
+            `Bearer ${MAIL_WORKER_TOKEN}`
+        },
+
+        body: JSON.stringify({
+          account_id: accountId,
+          email
+        })
+      }
+    );
+
+    const result =
+      await response.json();
+
+    console.log(
+      "EMAIL PERSISTED:",
+      email.uid,
+      result?.success
+    );
+
+    return result;
+  } catch (e) {
+    console.error(
+      "PERSIST ERROR:",
+      e
+    );
+
+    return {
+      success: false
+    };
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
+| FETCH EMAILS
+|--------------------------------------------------------------------------
+*/
+
+export async function fetchEmails(
+  data
+) {
   return new Promise((resolve) => {
     const imap = new Imap({
       user: data.email,
@@ -28,6 +95,8 @@ export async function fetchEmails(data) {
     const emails = [];
 
     imap.once("ready", () => {
+      console.log("IMAP READY");
+
       imap.openBox(
         "INBOX",
         true,
@@ -41,8 +110,29 @@ export async function fetchEmails(data) {
             });
           }
 
+          /*
+          |--------------------------------------------------------------------------
+          | INCREMENTAL UID FETCH
+          |--------------------------------------------------------------------------
+          */
+
+          const sinceUid =
+            Number(
+              data.since_uid || 0
+            ) + 1;
+
+          const searchCriteria =
+            sinceUid > 1
+              ? [["UID", `${sinceUid}:*`]]
+              : ["ALL"];
+
+          console.log(
+            "SEARCH:",
+            searchCriteria
+          );
+
           imap.search(
-            ["ALL"],
+            searchCriteria,
             (err, results) => {
               if (err) {
                 imap.end();
@@ -55,7 +145,7 @@ export async function fetchEmails(data) {
 
               if (
                 !results ||
-                !results.length
+                results.length === 0
               ) {
                 imap.end();
 
@@ -65,11 +155,8 @@ export async function fetchEmails(data) {
                 });
               }
 
-              const latest =
-                results.slice(-25);
-
               const fetcher =
-                imap.fetch(latest, {
+                imap.fetch(results, {
                   bodies: "",
                   markSeen: false
                 });
@@ -105,6 +192,12 @@ export async function fetchEmails(data) {
                     }
                   );
 
+                  /*
+                  |--------------------------------------------------------------------------
+                  | INSTANT PERSIST
+                  |--------------------------------------------------------------------------
+                  */
+
                   msg.once(
                     "end",
                     async () => {
@@ -114,8 +207,12 @@ export async function fetchEmails(data) {
                             raw
                           );
 
-                        emails.push({
-                          id: uid,
+                        const email = {
+                          uid,
+
+                          message_id:
+                            parsed.messageId ||
+                            uid,
 
                           subject:
                             parsed.subject ||
@@ -135,10 +232,22 @@ export async function fetchEmails(data) {
 
                           html_content:
                             parsed.html ||
-                            `<pre>${
+                            "",
+
+                          snippet:
+                            (
                               parsed.text ||
                               ""
-                            }</pre>`,
+                            )
+                              .replace(
+                                /\s+/g,
+                                " "
+                              )
+                              .trim()
+                              .slice(
+                                0,
+                                180
+                              ),
 
                           received_at:
                             parsed.date
@@ -151,10 +260,30 @@ export async function fetchEmails(data) {
                             "INBOX",
 
                           is_read: false
-                        });
+                        };
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | IMMEDIATE DATABASE PUSH
+                        |--------------------------------------------------------------------------
+                        */
+
+                        await persistEmail(
+                          data.account_id,
+                          email
+                        );
+
+                        emails.push(
+                          email
+                        );
+
+                        console.log(
+                          "INSTANT EMAIL:",
+                          uid
+                        );
                       } catch (e) {
                         console.error(
-                          "MAIL PARSE ERROR:",
+                          "PARSE ERROR:",
                           e
                         );
                       }
@@ -178,6 +307,10 @@ export async function fetchEmails(data) {
               fetcher.once(
                 "end",
                 () => {
+                  console.log(
+                    "FETCH COMPLETE"
+                  );
+
                   imap.end();
 
                   emails.sort((a, b) => {
@@ -204,10 +337,21 @@ export async function fetchEmails(data) {
     });
 
     imap.once("error", (err) => {
+      console.error(
+        "IMAP ERROR:",
+        err
+      );
+
       return resolve({
         success: false,
         error: err.message
       });
+    });
+
+    imap.once("end", () => {
+      console.log(
+        "IMAP CONNECTION CLOSED"
+      );
     });
 
     imap.connect();
