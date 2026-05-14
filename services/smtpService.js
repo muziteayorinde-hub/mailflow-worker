@@ -2,41 +2,80 @@ import nodemailer from "nodemailer";
 
 /*
 |--------------------------------------------------------------------------
+| CREATE TRANSPORTER
+|--------------------------------------------------------------------------
+*/
+
+function createTransporter() {
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+
+    port: Number(
+      process.env.SMTP_PORT || 587
+    ),
+
+    secure: false,
+
+    auth: {
+      user:
+        process.env.SMTP_USER,
+
+      pass:
+        process.env.SMTP_PASS,
+    },
+
+    tls: {
+      rejectUnauthorized: false,
+    },
+  });
+}
+
+/*
+|--------------------------------------------------------------------------
+| TEST SMTP
+|--------------------------------------------------------------------------
+*/
+
+export async function testSmtp() {
+  try {
+    const transporter =
+      createTransporter();
+
+    await transporter.verify();
+
+    console.log(
+      "SMTP VERIFIED"
+    );
+
+    return {
+      success: true,
+    };
+  } catch (error) {
+    console.error(
+      "SMTP TEST ERROR:",
+      error
+    );
+
+    return {
+      success: false,
+      error:
+        error.message,
+    };
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
 | SEND EMAIL
 |--------------------------------------------------------------------------
 */
 
-export async function sendEmail(data) {
+export async function sendEmail(
+  data
+) {
   try {
-    /*
-    |--------------------------------------------------------------------------
-    | SMTP TRANSPORT
-    |--------------------------------------------------------------------------
-    */
-
     const transporter =
-      nodemailer.createTransport({
-        host:
-          process.env.SMTP_HOST,
-
-        port: Number(
-          process.env.SMTP_PORT || 587
-        ),
-
-        secure: false,
-
-        auth: {
-          user:
-            process.env.SMTP_USER,
-
-          pass:
-            process.env.SMTP_PASS,
-        },
-
-        tls: {
-          rejectUnauthorized: false,
-        },
-      });
+      createTransporter();
 
     /*
     |--------------------------------------------------------------------------
@@ -59,6 +98,12 @@ export async function sendEmail(data) {
       return {
         filename:
           file.filename,
+
+        /*
+        |--------------------------------------------------------------------------
+        | IMPORTANT FIX
+        |--------------------------------------------------------------------------
+        */
 
         content:
           Buffer.from(
