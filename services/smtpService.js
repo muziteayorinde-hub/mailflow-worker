@@ -2,70 +2,100 @@
 
 import nodemailer from "nodemailer";
 
+// -----------------------------------------------------
+// Build SMTP transport config
+// Maps worker payload -> nodemailer config
+// -----------------------------------------------------
 function createTransportConfig(config = {}) {
+  const host = config.smtpHost;
+  const port = Number(config.smtpPort);
+
+  const secure =
+    typeof config.secure === "boolean"
+      ? config.secure
+      : config.secure === "true";
+
+  const requireTLS =
+    typeof config.requireTLS ===
+    "boolean"
+      ? config.requireTLS
+      : config.requireTLS ===
+        "true";
+
+  const username =
+    config.username || "";
+
+  const password =
+    config.password || "";
+
+  console.log(
+    "SMTP CONFIG",
+    {
+      host,
+      port,
+      secure,
+      requireTLS,
+      username,
+      hasPassword:
+        !!password,
+    }
+  );
+
   return {
-    host: config.host,
-    port: Number(config.port),
-    secure: Boolean(config.secure),
-    requireTLS: Boolean(config.requireTLS),
+    host,
+    port,
+    secure,
+    requireTLS,
 
     auth: {
-      user: config.username,
-      pass: config.password,
+      user: username,
+      pass: password,
     },
 
     tls: {
-      rejectUnauthorized: false,
+      rejectUnauthorized:
+        false,
     },
 
     // generous timeouts
-    connectionTimeout: 60000,
-    greetingTimeout: 60000,
-    socketTimeout: 60000,
+    connectionTimeout:
+      60000,
+    greetingTimeout:
+      60000,
+    socketTimeout:
+      60000,
 
     logger: true,
     debug: true,
   };
 }
 
-// ------------------------------------------------
+// -----------------------------------------------------
 // SEND EMAIL
-// NO verify() here
-// ------------------------------------------------
+// IMPORTANT:
+// NO transporter.verify()
+// -----------------------------------------------------
 export async function sendEmail(
-  smtpConfig,
-  mailOptions
+  smtpConfig = {},
+  mailOptions = {}
 ) {
-  const config =
-    createTransportConfig(
-      smtpConfig
+  try {
+    console.log(
+      "SEND EMAIL"
     );
 
-  console.log(
-    "SMTP CONFIG",
-    {
-      host: config.host,
-      port: config.port,
-      secure:
-        config.secure,
-      requireTLS:
-        config.requireTLS,
-      username:
-        smtpConfig.username,
-      hasPassword:
-        !!smtpConfig.password,
-    }
-  );
-
-  try {
-    const transporter =
-      nodemailer.createTransport(
-        config
+    const transportConfig =
+      createTransportConfig(
+        smtpConfig
       );
 
-    // IMPORTANT:
-    // directly send
-    // no transporter.verify()
+    const transporter =
+      nodemailer.createTransport(
+        transportConfig
+      );
+
+    // Direct send
+    // no verify()
 
     const info =
       await transporter.sendMail(
@@ -88,7 +118,14 @@ export async function sendEmail(
 
     return {
       success: true,
-      ...info,
+      messageId:
+        info.messageId,
+      response:
+        info.response,
+      accepted:
+        info.accepted,
+      rejected:
+        info.rejected,
     };
   } catch (err) {
     console.error(
@@ -112,36 +149,55 @@ export async function sendEmail(
   }
 }
 
-// ------------------------------------------------
+// -----------------------------------------------------
 // TEST SMTP
 // verify ONLY here
-// ------------------------------------------------
+// -----------------------------------------------------
 export async function testSmtp(
-  smtpConfig
+  smtpConfig = {}
 ) {
-  const config =
-    createTransportConfig(
-      smtpConfig
+  try {
+    console.log(
+      "VERIFYING SMTP..."
     );
 
-  const transporter =
-    nodemailer.createTransport(
-      config
+    const transportConfig =
+      createTransportConfig(
+        smtpConfig
+      );
+
+    const transporter =
+      nodemailer.createTransport(
+        transportConfig
+      );
+
+    await transporter.verify();
+
+    console.log(
+      "SMTP VERIFIED"
     );
 
-  console.log(
-    "VERIFYING SMTP..."
-  );
+    return {
+      ok: true,
+    };
+  } catch (err) {
+    console.error(
+      "SMTP TEST ERROR",
+      {
+        message:
+          err.message,
+        code: err.code,
+        command:
+          err.command,
+        response:
+          err.response,
+        responseCode:
+          err.responseCode,
+      }
+    );
 
-  await transporter.verify();
-
-  console.log(
-    "SMTP VERIFIED"
-  );
-
-  return {
-    ok: true,
-  };
+    throw err;
+  }
 }
 
 export default {
