@@ -41,6 +41,7 @@ function createTransporter(config = {}) {
   return nodemailer.createTransport({
     host: smtpHost,
     port: smtpPort,
+
     secure,
     requireTLS,
 
@@ -54,10 +55,10 @@ function createTransporter(config = {}) {
         rejectUnauthorized: false,
       },
 
-    // Prevent hanging forever
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
+    // RESTORED to 30s timeout
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 30000,
 
     logger: true,
     debug: true,
@@ -238,6 +239,7 @@ export async function sendEmail(
         html:
           payload.html,
 
+        // only include if attachments exist
         attachments:
           mailAttachments.length >
           0
@@ -278,19 +280,14 @@ export async function sendEmail(
     console.error({
       message:
         error?.message,
-
       code:
         error?.code,
-
       command:
         error?.command,
-
       response:
         error?.response,
-
       responseCode:
         error?.responseCode,
-
       stack:
         error?.stack,
     });
