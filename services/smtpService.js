@@ -2,31 +2,40 @@
 
 import nodemailer from "nodemailer";
 
-// -----------------------------------------------------
-// Build SMTP transport config
-// Maps worker payload -> nodemailer config
-// -----------------------------------------------------
-function createTransportConfig(config = {}) {
-  const host = config.smtpHost;
-  const port = Number(config.smtpPort);
+/**
+ * Build nodemailer transport config
+ * IMPORTANT:
+ * Frontend sends:
+ * smtpHost, smtpPort, username, password
+ */
+function buildTransportConfig(
+  smtpConfig = {}
+) {
+  const host =
+    smtpConfig.smtpHost;
+
+  const port = Number(
+    smtpConfig.smtpPort
+  );
 
   const secure =
-    typeof config.secure === "boolean"
-      ? config.secure
-      : config.secure === "true";
+    smtpConfig.secure === true ||
+    smtpConfig.secure ===
+      "true";
 
   const requireTLS =
-    typeof config.requireTLS ===
-    "boolean"
-      ? config.requireTLS
-      : config.requireTLS ===
-        "true";
+    smtpConfig.requireTLS ===
+      true ||
+    smtpConfig.requireTLS ===
+      "true";
 
   const username =
-    config.username || "";
+    smtpConfig.username ||
+    "";
 
   const password =
-    config.password || "";
+    smtpConfig.password ||
+    "";
 
   console.log(
     "SMTP CONFIG",
@@ -57,7 +66,7 @@ function createTransportConfig(config = {}) {
         false,
     },
 
-    // generous timeouts
+    // timeouts
     connectionTimeout:
       60000,
     greetingTimeout:
@@ -70,11 +79,10 @@ function createTransportConfig(config = {}) {
   };
 }
 
-// -----------------------------------------------------
-// SEND EMAIL
-// IMPORTANT:
-// NO transporter.verify()
-// -----------------------------------------------------
+/**
+ * SEND EMAIL
+ * NO transporter.verify()
+ */
 export async function sendEmail(
   smtpConfig = {},
   mailOptions = {}
@@ -84,8 +92,26 @@ export async function sendEmail(
       "SEND EMAIL"
     );
 
+    console.log(
+      "SMTP CONFIG RECEIVED",
+      {
+        smtpHost:
+          smtpConfig.smtpHost,
+        smtpPort:
+          smtpConfig.smtpPort,
+        username:
+          smtpConfig.username,
+        secure:
+          smtpConfig.secure,
+        requireTLS:
+          smtpConfig.requireTLS,
+        hasPassword:
+          !!smtpConfig.password,
+      }
+    );
+
     const transportConfig =
-      createTransportConfig(
+      buildTransportConfig(
         smtpConfig
       );
 
@@ -94,8 +120,9 @@ export async function sendEmail(
         transportConfig
       );
 
-    // Direct send
-    // no verify()
+    // IMPORTANT:
+    // send directly
+    // NO verify()
 
     const info =
       await transporter.sendMail(
@@ -149,10 +176,10 @@ export async function sendEmail(
   }
 }
 
-// -----------------------------------------------------
-// TEST SMTP
-// verify ONLY here
-// -----------------------------------------------------
+/**
+ * TEST SMTP
+ * verify ONLY here
+ */
 export async function testSmtp(
   smtpConfig = {}
 ) {
@@ -162,7 +189,7 @@ export async function testSmtp(
     );
 
     const transportConfig =
-      createTransportConfig(
+      buildTransportConfig(
         smtpConfig
       );
 
@@ -189,10 +216,6 @@ export async function testSmtp(
         code: err.code,
         command:
           err.command,
-        response:
-          err.response,
-        responseCode:
-          err.responseCode,
       }
     );
 
