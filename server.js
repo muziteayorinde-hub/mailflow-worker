@@ -2,10 +2,20 @@
 
 import express from "express";
 import cors from "cors";
-import { sendEmail } from "./services/smtpService.js";
+import dotenv from "dotenv";
+
+import {
+  sendEmail,
+  testSmtp,
+} from "./services/smtpService.js";
+
+dotenv.config();
 
 const app = express();
 
+// ------------------------------------
+// Middleware
+// ------------------------------------
 app.use(cors());
 
 app.use(
@@ -14,6 +24,83 @@ app.use(
   })
 );
 
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "50mb",
+  })
+);
+
+// ------------------------------------
+// Health check
+// ------------------------------------
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message:
+      "MailFlow Worker running",
+  });
+});
+
+// ------------------------------------
+// SMTP test
+// ------------------------------------
+app.post(
+  "/test-smtp",
+  async (req, res) => {
+    try {
+      const { smtpConfig } =
+        req.body;
+
+      console.log(
+        "TEST SMTP"
+      );
+
+      console.log(
+        "SMTP CONFIG RECEIVED",
+        {
+          smtpHost:
+            smtpConfig?.smtpHost,
+          smtpPort:
+            smtpConfig?.smtpPort,
+          username:
+            smtpConfig?.username,
+          secure:
+            smtpConfig?.secure,
+          requireTLS:
+            smtpConfig?.requireTLS,
+          hasPassword:
+            !!smtpConfig?.password,
+        }
+      );
+
+      const result =
+        await testSmtp(
+          smtpConfig
+        );
+
+      return res.json({
+        success: true,
+        result,
+      });
+    } catch (err) {
+      console.error(
+        "SMTP TEST ERROR",
+        err
+      );
+
+      return res.status(500).json({
+        success: false,
+        error:
+          err.message,
+      });
+    }
+  }
+);
+
+// ------------------------------------
+// SEND EMAIL
+// ------------------------------------
 app.post(
   "/send-email",
   async (req, res) => {
@@ -84,8 +171,8 @@ app.post(
         references,
       };
 
-      // IMPORTANT FIX:
-      // pass smtpConfig FIRST
+      // IMPORTANT FIX
+      // pass smtpConfig first
       const result =
         await sendEmail(
           smtpConfig,
@@ -111,6 +198,9 @@ app.post(
   }
 );
 
+// ------------------------------------
+// Start server
+// ------------------------------------
 const PORT =
   process.env.PORT || 10000;
 
