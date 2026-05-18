@@ -1,255 +1,127 @@
+// Mail sender route
+// server.js
+
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-import net from "net";
+import bodyParser from "body-parser";
 
 import {
-  fetchEmails
-} from "./services/imapService.js";
-
-import {
+  sendEmail,
   testSmtp,
-  sendEmail
 } from "./services/smtpService.js";
-
-dotenv.config();
 
 const app = express();
 
-/*
-|--------------------------------------------------------------------------
-| MIDDLEWARE
-|--------------------------------------------------------------------------
-*/
-
 app.use(cors());
+app.use(bodyParser.json({ limit: "50mb" }));
+app.use(bodyParser.urlencoded({ extended: true }));
 
-app.use(express.json({
-  limit: "25mb"
-}));
-
-app.use(express.urlencoded({
-  extended: true
-}));
-
-/*
-|--------------------------------------------------------------------------
-| ROOT
-|--------------------------------------------------------------------------
-*/
-
-app.get("/", (_req, res) => {
+// Health check
+app.get("/", (req, res) => {
   return res.json({
     success: true,
-    status: "MailFlow Worker Running"
+    status: "MailFlow Worker Running",
   });
 });
 
-/*
-|--------------------------------------------------------------------------
-| GET SERVER IP
-|--------------------------------------------------------------------------
-*/
-
-app.get("/ip", async (_req, res) => {
+// SMTP test route
+app.post("/mail/test-smtp", async (req, res) => {
   try {
-    const response = await fetch(
-      "https://api.ipify.org?format=json"
-    );
+    const body = req.body || {};
 
-    const data = await response.json();
+    const smtpConfig = {
+      smtpHost: body.smtpHost,
+      smtpPort: body.smtpPort,
+      username: body.username,
+      password: body.password,
+      secure: body.secure,
+      requireTLS: body.requireTLS,
+    };
 
-    return res.json({
-      success: true,
-      ip: data.ip
-    });
-  } catch (e) {
-    console.error("IP ERROR:", e);
+    console.log("TEST SMTP CONFIG", smtpConfig);
+
+    const result = await testSmtp(smtpConfig);
+
+    return res.json(result);
+  } catch (error) {
+    console.error("TEST SMTP ERROR", error);
 
     return res.status(500).json({
       success: false,
-      error: e?.message || "Failed to get IP"
+      error: error.message,
     });
   }
 });
 
-/*
-|--------------------------------------------------------------------------
-| SMTP CHECK
-|--------------------------------------------------------------------------
-*/
-
-app.get("/smtp-check", async (_req, res) => {
-  try {
-    const socket = new net.Socket();
-
-    socket.setTimeout(15000);
-
-    socket.connect(
-      587,
-      "business24.web-hosting.com",
-      () => {
-        console.log("SMTP PORT REACHABLE");
-
-        res.json({
-          success: true,
-          message: "SMTP port reachable"
-        });
-
-        socket.destroy();
-      }
-    );
-
-    socket.on("error", (err) => {
-      console.error("SMTP SOCKET ERROR:", err);
-
-      res.json({
-        success: false,
-        error: err.message
-      });
-    });
-
-    socket.on("timeout", () => {
-      console.error("SMTP SOCKET TIMEOUT");
-
-      res.json({
-        success: false,
-        error: "SMTP connection timeout"
-      });
-
-      socket.destroy();
-    });
-  } catch (e) {
-    console.error("SMTP CHECK ERROR:", e);
-
-    return res.status(200).json({
-      success: false,
-      error: e?.message || "SMTP test failed"
-    });
-  }
-});
-
-/*
-|--------------------------------------------------------------------------
-| TEST ACCOUNT
-|--------------------------------------------------------------------------
-*/
-
-app.post("/mail/test", async (req, res) => {
-  try {
-    const data = req.body;
-
-    console.log("MAIL TEST");
-
-    if (
-      !data?.email ||
-      !data?.password ||
-      !data?.imapHost
-    ) {
-      return res.json({
-        success: false,
-        error: "Missing mail configuration"
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: "Mail account connected successfully"
-    });
-  } catch (e) {
-    console.error("MAIL TEST ERROR:", e);
-
-    return res.status(200).json({
-      success: false,
-      error: e?.message || "Mail test failed"
-    });
-  }
-});
-
-/*
-|--------------------------------------------------------------------------
-| FETCH EMAILS
-|--------------------------------------------------------------------------
-*/
-
-app.post("/mail/fetch", async (req, res) => {
-  try {
-    console.log("FETCH EMAILS");
-
-    const result = await fetchEmails(req.body);
-
-    return res.json(result);
-  } catch (e) {
-    console.error("FETCH ERROR:", e);
-
-    return res.status(200).json({
-      success: false,
-      error: e?.message || "Fetch failed"
-    });
-  }
-});
-
-/*
-|--------------------------------------------------------------------------
-| SEND EMAIL
-|--------------------------------------------------------------------------
-*/
-
+// SEND EMAIL ROUTE
 app.post("/mail/send", async (req, res) => {
   try {
     console.log("SEND EMAIL");
 
-    const result = await sendEmail(req.body);
+    const body = req.body || {};
+
+    console.log("REQUEST BODY", {
+      hasBody: !!body,
+      to: body.to,
+      subject: body.subject,
+      hasPassword: !!body.password,
+    });
+
+    // VERY IMPORTANT:
+    // pass smtp config from frontend/db
+    const smtpConfig = {
+      smtpHost: body.smtpHost,
+      smtpPort: body.smtpPort,
+      username: body.username,
+      password: body.password,
+      secure: body.secure,
+      requireTLS: body.requireTLS,
+    };
+
+    console.log("SMTP CONFIG RECEIVED", {
+      smtpHost: smtpConfig.smtpHost,
+      smtpPort: smtpConfig.smtpPort,
+      username: smtpConfig.username,
+      secure: smtpConfig.secure,
+      requireTLS: smtpConfig.requireTLS,
+      hasPassword: !!smtpConfig.password,
+    });
+
+    const result = await sendEmail({
+      smtpConfig,
+
+      from: body.from,
+      to: body.to,
+      cc: body.cc || [],
+      bcc: body.bcc || [],
+
+      subject: body.subject,
+      text: body.text,
+      html: body.html,
+
+      attachments: body.attachments || [],
+
+      inReplyTo: body.inReplyTo,
+      references: body.references,
+    });
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
 
     return res.json(result);
-  } catch (e) {
-    console.error("SEND MAIL ERROR:", e);
+  } catch (error) {
+    console.error("SEND EMAIL ROUTE ERROR", error);
 
-    return res.status(200).json({
+    return res.status(500).json({
       success: false,
-      error: e?.message || "Failed to send email"
+      error: error.message,
     });
   }
 });
 
-/*
-|--------------------------------------------------------------------------
-| 404
-|--------------------------------------------------------------------------
-*/
-
-app.use((_req, res) => {
-  return res.status(404).json({
-    success: false,
-    error: "Route not found"
-  });
-});
-
-/*
-|--------------------------------------------------------------------------
-| GLOBAL ERROR HANDLER
-|--------------------------------------------------------------------------
-*/
-
-app.use((err, _req, res, _next) => {
-  console.error("UNHANDLED ERROR:", err);
-
-  return res.status(200).json({
-    success: false,
-    error: err?.message || "Internal worker error"
-  });
-});
-
-/*
-|--------------------------------------------------------------------------
-| START SERVER
-|--------------------------------------------------------------------------
-*/
-
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(
-    `🚀 MailFlow Worker running on port ${PORT}`
-  );
+  console.log(`Mail worker running on port ${PORT}`);
 });
