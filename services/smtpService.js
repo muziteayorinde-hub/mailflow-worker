@@ -37,37 +37,34 @@ function createTransporter(config = {}) {
     username,
   });
 
-  const transporter =
-    nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
+  return nodemailer.createTransport({
+    host: smtpHost,
+    port: smtpPort,
+    secure,
+    requireTLS,
 
-      secure,
-      requireTLS,
+    auth: {
+      user: username,
+      pass: password,
+    },
 
-      auth: {
-        user: username,
-        pass: password,
+    tls:
+      config.tlsOptions || {
+        rejectUnauthorized: false,
       },
 
-      tls:
-        config.tlsOptions || {
-          rejectUnauthorized: false,
-        },
+    // Faster failures if SMTP is unreachable
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
 
-      connectionTimeout: 30000,
-      greetingTimeout: 30000,
-      socketTimeout: 30000,
-
-      logger: true,
-      debug: true,
-    });
-
-  return transporter;
+    logger: true,
+    debug: true,
+  });
 }
 
 /**
- * Test SMTP connection
+ * Test SMTP Connection
  */
 export async function testSmtp(
   config = {}
@@ -141,19 +138,31 @@ export async function sendEmail(
       "SMTP VERIFIED"
     );
 
-    // Convert attachments
+    /**
+     * Safe attachment handling
+     */
     const mailAttachments =
-      (
-        payload.attachments ||
-        []
-      ).map((file) => {
+      [];
+
+    for (const file of payload.attachments ||
+      []) {
+      try {
+        if (
+          !file ||
+          !file.filename ||
+          !file.content
+        ) {
+          console.log(
+            "Skipping invalid attachment"
+          );
+          continue;
+        }
+
         const bytes =
-          file?.content
-            ? Buffer.byteLength(
-                file.content,
-                "base64"
-              )
-            : 0;
+          Buffer.byteLength(
+            file.content,
+            "base64"
+          );
 
         console.log(
           "SMTP ATTACHMENT",
@@ -161,22 +170,27 @@ export async function sendEmail(
           `${bytes} bytes`
         );
 
-        return {
+        mailAttachments.push({
           filename:
             file.filename,
 
           content:
-            file.content
-              ? Buffer.from(
-                  file.content,
-                  "base64"
-                )
-              : undefined,
+            Buffer.from(
+              file.content,
+              "base64"
+            ),
 
           contentType:
-            file.contentType,
-        };
-      });
+            file.contentType ||
+            "application/octet-stream",
+        });
+      } catch (err) {
+        console.error(
+          "ATTACHMENT ERROR",
+          err
+        );
+      }
+    }
 
     console.log(
       "SMTP attachments count:",
@@ -210,16 +224,24 @@ export async function sendEmail(
         html:
           payload.html,
 
+        // Only include if valid attachments exist
         attachments:
-          mailAttachments,
+          mailAttachments.length >
+          0
+            ? mailAttachments
+            : undefined,
 
         inReplyTo:
+          payload.inReplyTo ||
           payload.in_reply_to,
 
         references:
+          payload.inReplyTo ||
           payload.in_reply_to
             ? [
-                payload.in_reply_to,
+                payload
+                  .inReplyTo ||
+                  payload.in_reply_to,
               ]
             : undefined,
       });
@@ -228,9 +250,7 @@ export async function sendEmail(
       "EMAIL SENT SUCCESS"
     );
 
-    console.log(
-      info
-    );
+    console.log(info);
 
     return {
       success: true,
