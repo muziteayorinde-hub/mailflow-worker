@@ -2,217 +2,146 @@
 
 import nodemailer from "nodemailer";
 
-function parseBoolean(value, fallback = false) {
-  if (typeof value === "boolean") return value;
-
-  if (typeof value === "string") {
-    return value.toLowerCase() === "true";
-  }
-
-  return fallback;
-}
-
 function createTransportConfig(config = {}) {
-  const host =
-    config.smtpHost ||
-    config.host ||
-    process.env.SMTP_HOST ||
-    "";
-
-  const port =
-    Number(config.smtpPort || config.port) ||
-    Number(process.env.SMTP_PORT) ||
-    587;
-
-  const username =
-    config.username ||
-    process.env.SMTP_USER ||
-    "";
-
-  const password =
-    config.password ||
-    process.env.SMTP_PASS ||
-    "";
-
-  // Smart defaults:
-  // 465 => SSL
-  // 587 => STARTTLS
-  const secure =
-    config.secure !== undefined
-      ? parseBoolean(config.secure)
-      : port === 465;
-
-  const requireTLS =
-    config.requireTLS !== undefined
-      ? parseBoolean(config.requireTLS)
-      : port === 587;
-
-  console.log("SMTP CONFIG", {
-    host,
-    port,
-    secure,
-    requireTLS,
-    username,
-    hasPassword: !!password,
-  });
-
   return {
-    host,
-    port,
-    secure,
-    requireTLS,
+    host: config.host,
+    port: Number(config.port),
+    secure: Boolean(config.secure),
+    requireTLS: Boolean(config.requireTLS),
 
     auth: {
-      user: username,
-      pass: password,
+      user: config.username,
+      pass: config.password,
     },
 
     tls: {
       rejectUnauthorized: false,
-      minVersion: "TLSv1.2",
     },
 
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 30000,
-
-    pool: true,
-    maxConnections: 3,
-    maxMessages: 100,
+    // generous timeouts
+    connectionTimeout: 60000,
+    greetingTimeout: 60000,
+    socketTimeout: 60000,
 
     logger: true,
     debug: true,
   };
 }
 
-export async function testSmtp(config = {}) {
-  try {
-    console.log("VERIFYING SMTP...");
-
-    const transporter = nodemailer.createTransport(
-      createTransportConfig(config)
+// ------------------------------------------------
+// SEND EMAIL
+// NO verify() here
+// ------------------------------------------------
+export async function sendEmail(
+  smtpConfig,
+  mailOptions
+) {
+  const config =
+    createTransportConfig(
+      smtpConfig
     );
 
-    await transporter.verify();
+  console.log(
+    "SMTP CONFIG",
+    {
+      host: config.host,
+      port: config.port,
+      secure:
+        config.secure,
+      requireTLS:
+        config.requireTLS,
+      username:
+        smtpConfig.username,
+      hasPassword:
+        !!smtpConfig.password,
+    }
+  );
 
-    console.log("SMTP VERIFIED");
+  try {
+    const transporter =
+      nodemailer.createTransport(
+        config
+      );
+
+    // IMPORTANT:
+    // directly send
+    // no transporter.verify()
+
+    const info =
+      await transporter.sendMail(
+        mailOptions
+      );
+
+    console.log(
+      "EMAIL SENT SUCCESS",
+      {
+        messageId:
+          info.messageId,
+        response:
+          info.response,
+        accepted:
+          info.accepted,
+        rejected:
+          info.rejected,
+      }
+    );
 
     return {
       success: true,
-      message: "SMTP verified successfully",
+      ...info,
     };
-  } catch (error) {
-    console.error("SMTP VERIFY ERROR", {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response,
-      responseCode: error.responseCode,
-      stack: error.stack,
-    });
+  } catch (err) {
+    console.error(
+      "SMTP SEND ERROR FULL",
+      {
+        message:
+          err.message,
+        code: err.code,
+        command:
+          err.command,
+        response:
+          err.response,
+        responseCode:
+          err.responseCode,
+        stack:
+          err.stack,
+      }
+    );
 
-    return {
-      success: false,
-      error: error.message,
-      code: error.code,
-    };
+    throw err;
   }
 }
 
-export async function sendEmail(payload = {}) {
-  try {
-    const {
-      smtpConfig = {},
-
-      from,
-      to,
-      cc,
-      bcc,
-
-      subject,
-      text,
-      html,
-
-      attachments = [],
-
-      inReplyTo,
-      references,
-    } = payload;
-
-    console.log("SEND PAYLOAD", {
-      from,
-      to,
-      cc,
-      bcc,
-      subject,
-      attachmentsCount: attachments.length,
-    });
-
-    const transporter = nodemailer.createTransport(
-      createTransportConfig(smtpConfig)
+// ------------------------------------------------
+// TEST SMTP
+// verify ONLY here
+// ------------------------------------------------
+export async function testSmtp(
+  smtpConfig
+) {
+  const config =
+    createTransportConfig(
+      smtpConfig
     );
 
-    console.log("VERIFYING SMTP...");
-    await transporter.verify();
-    console.log("SMTP VERIFIED");
+  const transporter =
+    nodemailer.createTransport(
+      config
+    );
 
-    const mailOptions = {
-      from,
-      to,
-      cc,
-      bcc,
-      subject,
-      text,
-      html,
+  console.log(
+    "VERIFYING SMTP..."
+  );
 
-      attachments: attachments.map((file) => ({
-        filename: file.filename || file.name,
-        content: file.content,
-        path: file.path,
-        contentType: file.contentType,
-      })),
-    };
+  await transporter.verify();
 
-    if (inReplyTo) {
-      mailOptions.inReplyTo = inReplyTo;
-    }
+  console.log(
+    "SMTP VERIFIED"
+  );
 
-    if (references) {
-      mailOptions.references = references;
-    }
-
-    const info = await transporter.sendMail(mailOptions);
-
-    console.log("EMAIL SENT SUCCESS", {
-      messageId: info.messageId,
-      response: info.response,
-      accepted: info.accepted,
-      rejected: info.rejected,
-    });
-
-    return {
-      success: true,
-      messageId: info.messageId,
-      response: info.response,
-      accepted: info.accepted,
-      rejected: info.rejected,
-    };
-  } catch (error) {
-    console.error("SMTP SEND ERROR FULL", {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response,
-      responseCode: error.responseCode,
-      stack: error.stack,
-    });
-
-    return {
-      success: false,
-      error: error.message,
-      code: error.code,
-    };
-  }
+  return {
+    ok: true,
+  };
 }
 
 export default {
