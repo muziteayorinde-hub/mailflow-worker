@@ -2,22 +2,25 @@
 
 import nodemailer from "nodemailer";
 
-function toBoolean(value, fallback = false) {
+function parseBoolean(value, fallback = false) {
   if (typeof value === "boolean") return value;
+
   if (typeof value === "string") {
     return value.toLowerCase() === "true";
   }
+
   return fallback;
 }
 
-function buildTransportConfig(config = {}) {
-  const smtpHost =
+function createTransportConfig(config = {}) {
+  const host =
     config.smtpHost ||
+    config.host ||
     process.env.SMTP_HOST ||
     "";
 
-  const smtpPort =
-    Number(config.smtpPort) ||
+  const port =
+    Number(config.smtpPort || config.port) ||
     Number(process.env.SMTP_PORT) ||
     587;
 
@@ -31,20 +34,31 @@ function buildTransportConfig(config = {}) {
     process.env.SMTP_PASS ||
     "";
 
-  // Smart defaults for Namecheap/private email
+  // Smart defaults:
+  // 465 => SSL
+  // 587 => STARTTLS
   const secure =
     config.secure !== undefined
-      ? toBoolean(config.secure)
-      : smtpPort === 465;
+      ? parseBoolean(config.secure)
+      : port === 465;
 
   const requireTLS =
     config.requireTLS !== undefined
-      ? toBoolean(config.requireTLS)
-      : smtpPort === 587;
+      ? parseBoolean(config.requireTLS)
+      : port === 587;
 
-  const transportConfig = {
-    host: smtpHost,
-    port: smtpPort,
+  console.log("SMTP CONFIG", {
+    host,
+    port,
+    secure,
+    requireTLS,
+    username,
+    hasPassword: !!password,
+  });
+
+  return {
+    host,
+    port,
     secure,
     requireTLS,
 
@@ -69,17 +83,6 @@ function buildTransportConfig(config = {}) {
     logger: true,
     debug: true,
   };
-
-  console.log("SMTP CONFIG", {
-    host: smtpHost,
-    port: smtpPort,
-    secure,
-    requireTLS,
-    username,
-    hasPassword: !!password,
-  });
-
-  return transportConfig;
 }
 
 export async function testSmtp(config = {}) {
@@ -87,7 +90,7 @@ export async function testSmtp(config = {}) {
     console.log("VERIFYING SMTP...");
 
     const transporter = nodemailer.createTransport(
-      buildTransportConfig(config)
+      createTransportConfig(config)
     );
 
     await transporter.verify();
@@ -96,7 +99,7 @@ export async function testSmtp(config = {}) {
 
     return {
       success: true,
-      message: "SMTP connection successful",
+      message: "SMTP verified successfully",
     };
   } catch (error) {
     console.error("SMTP VERIFY ERROR", {
@@ -139,12 +142,14 @@ export async function sendEmail(payload = {}) {
     console.log("SEND PAYLOAD", {
       from,
       to,
+      cc,
+      bcc,
       subject,
       attachmentsCount: attachments.length,
     });
 
     const transporter = nodemailer.createTransport(
-      buildTransportConfig(smtpConfig)
+      createTransportConfig(smtpConfig)
     );
 
     console.log("VERIFYING SMTP...");
@@ -156,7 +161,6 @@ export async function sendEmail(payload = {}) {
       to,
       cc,
       bcc,
-
       subject,
       text,
       html,
@@ -167,8 +171,6 @@ export async function sendEmail(payload = {}) {
         path: file.path,
         contentType: file.contentType,
       })),
-
-      headers: {},
     };
 
     if (inReplyTo) {
