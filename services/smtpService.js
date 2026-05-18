@@ -1,9 +1,9 @@
 import nodemailer from "nodemailer";
 
 /**
- * Creates SMTP transporter from request payload
+ * Create SMTP transporter
  */
-function createTransporter(config) {
+function createTransporter(config = {}) {
   const smtpHost =
     config.smtpHost ||
     process.env.SMTP_HOST;
@@ -37,33 +37,46 @@ function createTransporter(config) {
     username,
   });
 
-  return nodemailer.createTransport({
-    host: smtpHost,
-    port: smtpPort,
-    secure,
-    requireTLS,
+  const transporter =
+    nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
 
-    auth: {
-      user: username,
-      pass: password,
-    },
+      secure,
+      requireTLS,
 
-    tls:
-      config.tlsOptions || {
-        rejectUnauthorized: false,
+      auth: {
+        user: username,
+        pass: password,
       },
 
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 30000,
-  });
+      tls:
+        config.tlsOptions || {
+          rejectUnauthorized: false,
+        },
+
+      connectionTimeout: 30000,
+      greetingTimeout: 30000,
+      socketTimeout: 30000,
+
+      logger: true,
+      debug: true,
+    });
+
+  return transporter;
 }
 
 /**
- * SMTP connection test
+ * Test SMTP connection
  */
-export async function testSmtp(config) {
+export async function testSmtp(
+  config = {}
+) {
   try {
+    console.log(
+      "TESTING SMTP..."
+    );
+
     const transporter =
       createTransporter(config);
 
@@ -80,9 +93,10 @@ export async function testSmtp(config) {
     };
   } catch (error) {
     console.error(
-      "SMTP VERIFY ERROR",
-      error
+      "SMTP VERIFY ERROR"
     );
+
+    console.error(error);
 
     return {
       success: false,
@@ -94,30 +108,45 @@ export async function testSmtp(config) {
 }
 
 /**
- * Send email
+ * Send Email
  */
 export async function sendEmail(
-  payload
+  payload = {}
 ) {
   try {
+    console.log(
+      "SEND PAYLOAD",
+      {
+        from:
+          payload.from,
+        to:
+          payload.to,
+        subject:
+          payload.subject,
+      }
+    );
+
     const transporter =
-      createTransporter(payload);
+      createTransporter(
+        payload
+      );
 
-    const {
-      from,
-      to,
-      cc,
-      bcc,
-      subject,
-      text,
-      html,
-      attachments = [],
-      in_reply_to,
-    } = payload;
+    console.log(
+      "VERIFYING SMTP..."
+    );
 
-    // Convert base64 → Buffer
+    await transporter.verify();
+
+    console.log(
+      "SMTP VERIFIED"
+    );
+
+    // Convert attachments
     const mailAttachments =
-      attachments.map((file) => {
+      (
+        payload.attachments ||
+        []
+      ).map((file) => {
         const bytes =
           file?.content
             ? Buffer.byteLength(
@@ -135,6 +164,7 @@ export async function sendEmail(
         return {
           filename:
             file.filename,
+
           content:
             file.content
               ? Buffer.from(
@@ -142,6 +172,7 @@ export async function sendEmail(
                   "base64"
                 )
               : undefined,
+
           contentType:
             file.contentType,
         };
@@ -152,39 +183,53 @@ export async function sendEmail(
       mailAttachments.length
     );
 
-    // Verify connection first
-    await transporter.verify();
-
     console.log(
-      "SMTP VERIFIED"
+      "SENDING EMAIL..."
     );
 
-    // Send mail
     const info =
       await transporter.sendMail({
-        from,
-        to,
-        cc,
-        bcc,
-        subject,
-        text,
-        html,
+        from:
+          payload.from,
+
+        to:
+          payload.to,
+
+        cc:
+          payload.cc,
+
+        bcc:
+          payload.bcc,
+
+        subject:
+          payload.subject,
+
+        text:
+          payload.text,
+
+        html:
+          payload.html,
 
         attachments:
           mailAttachments,
 
         inReplyTo:
-          in_reply_to,
+          payload.in_reply_to,
 
         references:
-          in_reply_to
-            ? [in_reply_to]
+          payload.in_reply_to
+            ? [
+                payload.in_reply_to,
+              ]
             : undefined,
       });
 
     console.log(
-      "EMAIL SENT SUCCESS",
-      info.messageId
+      "EMAIL SENT SUCCESS"
+    );
+
+    console.log(
+      info
     );
 
     return {
@@ -194,9 +239,10 @@ export async function sendEmail(
     };
   } catch (error) {
     console.error(
-      "SMTP SEND ERROR",
-      error
+      "SMTP SEND ERROR"
     );
+
+    console.error(error);
 
     return {
       success: false,
