@@ -35,6 +35,7 @@ function createTransporter(config = {}) {
     secure,
     requireTLS,
     username,
+    hasPassword: !!password,
   });
 
   return nodemailer.createTransport({
@@ -53,7 +54,7 @@ function createTransporter(config = {}) {
         rejectUnauthorized: false,
       },
 
-    // Faster failures if SMTP is unreachable
+    // Prevent hanging forever
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 10000,
@@ -64,7 +65,7 @@ function createTransporter(config = {}) {
 }
 
 /**
- * Test SMTP Connection
+ * Test SMTP
  */
 export async function testSmtp(
   config = {}
@@ -90,10 +91,23 @@ export async function testSmtp(
     };
   } catch (error) {
     console.error(
-      "SMTP VERIFY ERROR"
+      "SMTP VERIFY ERROR FULL"
     );
 
-    console.error(error);
+    console.error({
+      message:
+        error?.message,
+      code:
+        error?.code,
+      command:
+        error?.command,
+      response:
+        error?.response,
+      responseCode:
+        error?.responseCode,
+      stack:
+        error?.stack,
+    });
 
     return {
       success: false,
@@ -224,7 +238,6 @@ export async function sendEmail(
         html:
           payload.html,
 
-        // Only include if valid attachments exist
         attachments:
           mailAttachments.length >
           0
@@ -259,16 +272,42 @@ export async function sendEmail(
     };
   } catch (error) {
     console.error(
-      "SMTP SEND ERROR"
+      "SMTP SEND ERROR FULL"
     );
 
-    console.error(error);
+    console.error({
+      message:
+        error?.message,
+
+      code:
+        error?.code,
+
+      command:
+        error?.command,
+
+      response:
+        error?.response,
+
+      responseCode:
+        error?.responseCode,
+
+      stack:
+        error?.stack,
+    });
 
     return {
       success: false,
       error:
         error?.message ||
         "SMTP send failed",
+      details: {
+        message:
+          error?.message,
+        code:
+          error?.code,
+        response:
+          error?.response,
+      },
     };
   }
 }
