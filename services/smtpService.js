@@ -3,54 +3,37 @@
 import nodemailer from "nodemailer";
 
 /**
- * Build nodemailer transport config
- * IMPORTANT:
- * Frontend sends:
- * smtpHost, smtpPort, username, password
+ * Build SMTP config safely
  */
-function buildTransportConfig(
-  smtpConfig = {}
-) {
+function buildTransportConfig(smtpConfig = {}) {
   const host =
-    smtpConfig.smtpHost;
+    smtpConfig.smtpHost ||
+    smtpConfig.host ||
+    "business24.web-hosting.com";
 
   const port = Number(
-    smtpConfig.smtpPort
+    smtpConfig.smtpPort ||
+      smtpConfig.port ||
+      587
   );
 
   const secure =
-    smtpConfig.secure === true ||
-    smtpConfig.secure ===
-      "true";
+    smtpConfig.secure === true;
 
   const requireTLS =
-    smtpConfig.requireTLS ===
-      true ||
-    smtpConfig.requireTLS ===
-      "true";
+    smtpConfig.requireTLS === true;
 
   const username =
     smtpConfig.username ||
+    smtpConfig.user ||
     "";
 
   const password =
     smtpConfig.password ||
+    smtpConfig.pass ||
     "";
 
-  console.log(
-    "SMTP CONFIG",
-    {
-      host,
-      port,
-      secure,
-      requireTLS,
-      username,
-      hasPassword:
-        !!password,
-    }
-  );
-
-  return {
+  const config = {
     host,
     port,
     secure,
@@ -61,55 +44,46 @@ function buildTransportConfig(
       pass: password,
     },
 
+    // prevent hanging forever
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 30000,
+
+    pool: false,
+
     tls: {
-      rejectUnauthorized:
-        false,
+      rejectUnauthorized: false,
     },
-
-    // timeouts
-    connectionTimeout:
-      60000,
-    greetingTimeout:
-      60000,
-    socketTimeout:
-      60000,
-
-    logger: true,
-    debug: true,
   };
+
+  console.log(
+    "SMTP CONFIG",
+    {
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      requireTLS:
+        config.requireTLS,
+      username,
+      hasPassword:
+        !!password,
+    }
+  );
+
+  return config;
 }
 
 /**
  * SEND EMAIL
- * NO transporter.verify()
+ * IMPORTANT:
+ * NO transporter.verify() here
+ * because shared SMTP often times out
  */
 export async function sendEmail(
-  smtpConfig = {},
-  mailOptions = {}
+  smtpConfig,
+  mailOptions
 ) {
   try {
-    console.log(
-      "SEND EMAIL"
-    );
-
-    console.log(
-      "SMTP CONFIG RECEIVED",
-      {
-        smtpHost:
-          smtpConfig.smtpHost,
-        smtpPort:
-          smtpConfig.smtpPort,
-        username:
-          smtpConfig.username,
-        secure:
-          smtpConfig.secure,
-        requireTLS:
-          smtpConfig.requireTLS,
-        hasPassword:
-          !!smtpConfig.password,
-      }
-    );
-
     const transportConfig =
       buildTransportConfig(
         smtpConfig
@@ -120,10 +94,21 @@ export async function sendEmail(
         transportConfig
       );
 
+    console.log(
+      "SENDING EMAIL",
+      {
+        to: mailOptions?.to,
+        subject:
+          mailOptions?.subject,
+        attachments:
+          mailOptions
+            ?.attachments
+            ?.length || 0,
+      }
+    );
+
     // IMPORTANT:
     // send directly
-    // NO verify()
-
     const info =
       await transporter.sendMail(
         mailOptions
@@ -136,24 +121,10 @@ export async function sendEmail(
           info.messageId,
         response:
           info.response,
-        accepted:
-          info.accepted,
-        rejected:
-          info.rejected,
       }
     );
 
-    return {
-      success: true,
-      messageId:
-        info.messageId,
-      response:
-        info.response,
-      accepted:
-        info.accepted,
-      rejected:
-        info.rejected,
-    };
+    return info;
   } catch (err) {
     console.error(
       "SMTP SEND ERROR FULL",
@@ -167,8 +138,7 @@ export async function sendEmail(
           err.response,
         responseCode:
           err.responseCode,
-        stack:
-          err.stack,
+        stack: err.stack,
       }
     );
 
@@ -181,13 +151,9 @@ export async function sendEmail(
  * verify ONLY here
  */
 export async function testSmtp(
-  smtpConfig = {}
+  smtpConfig
 ) {
   try {
-    console.log(
-      "VERIFYING SMTP..."
-    );
-
     const transportConfig =
       buildTransportConfig(
         smtpConfig
@@ -198,6 +164,10 @@ export async function testSmtp(
         transportConfig
       );
 
+    console.log(
+      "VERIFYING SMTP..."
+    );
+
     await transporter.verify();
 
     console.log(
@@ -205,25 +175,14 @@ export async function testSmtp(
     );
 
     return {
-      ok: true,
+      success: true,
     };
   } catch (err) {
     console.error(
       "SMTP TEST ERROR",
-      {
-        message:
-          err.message,
-        code: err.code,
-        command:
-          err.command,
-      }
+      err
     );
 
     throw err;
   }
 }
-
-export default {
-  sendEmail,
-  testSmtp,
-};
