@@ -3,36 +3,77 @@
 import Imap from "imap";
 import { simpleParser } from "mailparser";
 
-export async function fetchEmails({
-  account,
-  folder = "INBOX",
-  limit = 50,
-}) {
+export async function fetchEmails(payload) {
   return new Promise(
     (resolve, reject) => {
 
+      console.log(
+        "FETCH PAYLOAD",
+        JSON.stringify(payload, null, 2)
+      );
+
+      // Handle both payload shapes
+      const account =
+        payload.account ||
+        payload;
+
+      if (!account) {
+        return reject(
+          new Error(
+            "No account data received"
+          )
+        );
+      }
+
+      const username =
+        account.username ||
+        account.email ||
+        account.imap_username;
+
+      const password =
+        account.password ||
+        account.imap_password;
+
+      const host =
+        account.imapHost ||
+        account.imap_host ||
+        "business24.web-hosting.com";
+
+      const port =
+        Number(
+          account.imapPort ||
+          account.imap_port
+        ) || 993;
+
+      const folder =
+        payload.folder ||
+        "INBOX";
+
+      const limit =
+        payload.limit ||
+        50;
+
+      console.log(
+        "FINAL IMAP CONFIG",
+        {
+          username,
+          host,
+          port,
+          hasPassword:
+            !!password,
+        }
+      );
+
       const imap =
         new Imap({
-          user:
-            account.username ||
-            account.email,
-
-          password:
-            account.password,
-
-          host:
-            account.imapHost ||
-            "business24.web-hosting.com",
-
-          port:
-            Number(
-              account.imapPort
-            ) || 993,
-
+          user: username,
+          password,
+          host,
+          port,
           tls: true,
-
           tlsOptions: {
-            rejectUnauthorized: false,
+            rejectUnauthorized:
+              false,
           },
         });
 
@@ -75,17 +116,14 @@ export async function fetchEmails({
                 imap.seq.fetch(
                   `${start}:${total}`,
                   {
-                    bodies:
-                      "",
+                    bodies: "",
                     struct: true,
                   }
                 );
 
               fetch.on(
                 "message",
-                (
-                  msg
-                ) => {
+                (msg) => {
                   msg.on(
                     "body",
                     async (
@@ -97,29 +135,27 @@ export async function fetchEmails({
                             stream
                           );
 
-                        emails.push(
-                          {
-                            subject:
-                              parsed.subject ||
-                              "",
-                            from:
-                              parsed.from
-                                ?.text ||
-                              "",
-                            to:
-                              parsed.to
-                                ?.text ||
-                              "",
-                            text:
-                              parsed.text ||
-                              "",
-                            html:
-                              parsed.html ||
-                              "",
-                            date:
-                              parsed.date,
-                          }
-                        );
+                        emails.push({
+                          subject:
+                            parsed.subject ||
+                            "",
+                          from:
+                            parsed.from
+                              ?.text ||
+                            "",
+                          to:
+                            parsed.to
+                              ?.text ||
+                            "",
+                          text:
+                            parsed.text ||
+                            "",
+                          html:
+                            parsed.html ||
+                            "",
+                          date:
+                            parsed.date,
+                        });
                       } catch (
                         err
                       ) {
@@ -160,9 +196,7 @@ export async function fetchEmails({
 
       imap.once(
         "error",
-        (
-          err
-        ) => {
+        (err) => {
           console.error(
             "IMAP ERROR",
             err
