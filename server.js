@@ -65,17 +65,6 @@ app.post(
       } = req.body;
 
       console.log(
-        "REQUEST BODY",
-        {
-          to,
-          subject,
-          hasPassword:
-            !!smtpConfig
-              ?.password,
-        }
-      );
-
-      console.log(
         "SMTP CONFIG RECEIVED",
         {
           smtpHost:
@@ -116,14 +105,6 @@ app.post(
           }
         );
 
-      console.log(
-        "EMAIL SENT SUCCESS",
-        {
-          messageId:
-            info.messageId,
-        }
-      );
-
       return res.json({
         success: true,
         messageId:
@@ -159,54 +140,25 @@ app.post(
         "FETCH EMAILS REQUEST"
       );
 
-      const {
-        account,
-        folder = "inbox",
-        full_resync = false,
-        limit = 50,
-        include_attachments = false,
-        attachments_metadata_only = true,
-        since_uid,
-      } = req.body;
+      const payload =
+        req.body;
 
       console.log(
-        "FETCH CONFIG",
-        {
-          folder,
-          full_resync,
-          limit,
-          since_uid,
-          include_attachments,
-          attachments_metadata_only,
-        }
-      );
-
-      console.log(
-        "SYNCING FOLDER",
-        folder
+        "FETCH PAYLOAD",
+        JSON.stringify(
+          payload,
+          null,
+          2
+        )
       );
 
       const result =
         await fetchEmails(
-          {
-            account,
-            folder,
-            full_resync,
-            limit,
-            since_uid,
-            include_attachments,
-            attachments_metadata_only,
-          }
+          payload
         );
 
       console.log(
-        "FETCH COMPLETE",
-        {
-          count:
-            result
-              ?.emails
-              ?.length || 0,
-        }
+        "FETCH COMPLETE"
       );
 
       return res.json({
@@ -238,17 +190,99 @@ app.post(
 );
 
 /**
+ * AUTO EMAIL SYNC
+ * Runs every 30 seconds
+ */
+
+async function autoSyncEmails() {
+  try {
+    console.log(
+      "AUTO SYNC STARTED"
+    );
+
+    // Replace this with DB fetch
+    const accounts =
+      global.emailAccounts ||
+      [];
+
+    if (
+      !accounts.length
+    ) {
+      console.log(
+        "NO ACCOUNTS TO SYNC"
+      );
+      return;
+    }
+
+    for (const account of accounts) {
+      try {
+        console.log(
+          `SYNCING ${account.email}`
+        );
+
+        const result =
+          await fetchEmails(
+            {
+              account,
+              folder:
+                "INBOX",
+              limit: 20,
+              full_resync:
+                false,
+              include_attachments:
+                false,
+              attachments_metadata_only:
+                true,
+            }
+          );
+
+        console.log(
+          `SYNC COMPLETE ${account.email}`,
+          {
+            emails:
+              result
+                ?.emails
+                ?.length ||
+              0,
+          }
+        );
+      } catch (err) {
+        console.error(
+          `SYNC FAILED ${account.email}`,
+          err.message
+        );
+      }
+    }
+  } catch (err) {
+    console.error(
+      "AUTO SYNC ERROR",
+      err
+    );
+  }
+}
+
+// Start immediately
+autoSyncEmails();
+
+// Run every 30 seconds
+setInterval(
+  autoSyncEmails,
+  30000
+);
+
+/**
  * 404 HANDLER
  */
-app.use((req, res) => {
-  return res
-    .status(404)
-    .json({
-      success: false,
-      error:
-        `Route not found: ${req.method} ${req.path}`,
-    });
-});
+app.use(
+  (req, res) => {
+    return res
+      .status(404)
+      .json({
+        success: false,
+        error: `Route not found: ${req.method} ${req.path}`,
+      });
+  }
+);
 
 /**
  * START SERVER
@@ -260,9 +294,5 @@ const PORT =
 app.listen(PORT, () => {
   console.log(
     `Mailflow Worker running on port ${PORT}`
-  );
-
-  console.log(
-    `Service live on port ${PORT}`
   );
 });
